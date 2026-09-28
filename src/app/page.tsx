@@ -1,13 +1,14 @@
 import { connection } from "next/server";
-import { buildDashboardRows } from "@/lib/dashboard";
-import { listAllChecks, listTrackedUrls } from "@/lib/db/repo";
+import { buildDashboardRows, recentCheckIds } from "@/lib/dashboard";
+import { listAllChecks, listProductsForChecks, listTrackedUrls } from "@/lib/db/repo";
 import { AddUrlForm } from "@/components/dashboard/add-url-form";
 import { TrackedUrlRow } from "@/components/dashboard/tracked-url-row";
 
 export default async function Home() {
   await connection();
   const [urls, checks] = await Promise.all([listTrackedUrls(), listAllChecks()]);
-  const rows = buildDashboardRows(urls, checks);
+  const productsByCheck = await listProductsForChecks(recentCheckIds(checks));
+  const rows = buildDashboardRows(urls, checks, productsByCheck);
 
   return (
     <main className="mx-auto w-full max-w-4xl px-4 py-10">
