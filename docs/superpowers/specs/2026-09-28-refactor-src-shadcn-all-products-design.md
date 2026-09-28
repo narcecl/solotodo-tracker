@@ -87,8 +87,9 @@ CREATE TABLE "url_check_products" (
   "position" integer NOT NULL,
   CONSTRAINT "url_check_products_check_position_unique" UNIQUE ("price_check_id", "position")
 );
-CREATE INDEX "url_check_products_price_check_id_idx" ON "url_check_products" ("price_check_id");
 ```
+
+El índice único `(price_check_id, position)` ya cubre las búsquedas por `price_check_id` (es la primera columna), así que no hace falta un índice aparte.
 
 Se define en `src/lib/db/schema.ts` con Drizzle y la migración se genera con `npm run db:generate`.
 
