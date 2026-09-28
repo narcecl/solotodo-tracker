@@ -9,22 +9,22 @@ Diseño: `docs/superpowers/specs/2026-09-28-solotodo-price-tracker-design.md`
 
 1. `npm install`
 2. `cp .env.example .env.local` y completar:
-   - `DATABASE_URL`: Postgres local, `postgresql://<usuario>@localhost:5432/solotodo_tracker` con `<usuario>` = `whoami` (requiere `brew services start postgresql@17` y `createdb solotodo_tracker`).
-   - `RESEND_API_KEY`: API key de Resend.
-   - `ALERT_EMAIL`: destinatario. Con el remitente por defecto (`onboarding@resend.dev`), Resend solo entrega al email de tu cuenta de Resend.
-   - `CRON_SECRET`: `openssl rand -hex 32`.
+    - `DATABASE_URL`: Postgres local, `postgresql://<usuario>@localhost:5432/solotodo_tracker` con `<usuario>` = `whoami` (requiere `brew services start postgresql@17` y `createdb solotodo_tracker`).
+    - `RESEND_API_KEY`: API key de Resend.
+    - `ALERT_EMAIL`: destinatario. Con el remitente por defecto (`onboarding@resend.dev`), Resend solo entrega al email de tu cuenta de Resend.
+    - `CRON_SECRET`: `openssl rand -hex 32`.
 3. `npm run db:migrate`
 4. `npm run dev` y abrir http://localhost:3000
 
 ## Comandos
 
-| Comando | Qué hace |
-|---|---|
-| `npm run dev` | Dashboard en localhost:3000 |
-| `npm test` | Tests (Vitest) |
-| `npm run typecheck` | Tipos (incluye `next typegen`) |
-| `npm run check-prices` | Ejecuta el chequeo como cron (puede enviar emails) |
-| `npm run db:generate` / `db:migrate` | Migraciones Drizzle |
+| Comando                              | Qué hace                                           |
+| ------------------------------------ | -------------------------------------------------- |
+| `npm run dev`                        | Dashboard en localhost:3000                        |
+| `npm test`                           | Tests (Vitest)                                     |
+| `npm run typecheck`                  | Tipos (incluye `next typegen`)                     |
+| `npm run check-prices`               | Ejecuta el chequeo como cron (puede enviar emails) |
+| `npm run db:generate` / `db:migrate` | Migraciones Drizzle                                |
 
 ## Cron local (macOS)
 

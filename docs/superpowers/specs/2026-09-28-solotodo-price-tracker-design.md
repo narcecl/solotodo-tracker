@@ -34,9 +34,9 @@ Uso personal, un solo usuario, sin autenticación de usuarios.
 
 - **Next.js 16** (App Router, carpeta `/app`, TypeScript).
 - **Postgres** en dos etapas, con el mismo schema y las mismas migraciones Drizzle:
-  - **Local:** Postgres 17 instalado con Homebrew (`postgresql@17`), base `solotodo_tracker`.
-  - **Deploy (Vercel):** **Supabase** (Postgres gestionado). Pasar de uno a otro es cambiar `DATABASE_URL` y aplicar las migraciones; no hay cambios de código.
-  - Driver `postgres` (postgres.js), que funciona igual contra el Postgres local y contra Supabase. Con `prepare: false` para ser compatible con el pooler de Supabase en modo transacción.
+    - **Local:** Postgres 17 instalado con Homebrew (`postgresql@17`), base `solotodo_tracker`.
+    - **Deploy (Vercel):** **Supabase** (Postgres gestionado). Pasar de uno a otro es cambiar `DATABASE_URL` y aplicar las migraciones; no hay cambios de código.
+    - Driver `postgres` (postgres.js), que funciona igual contra el Postgres local y contra Supabase. Con `prepare: false` para ser compatible con el pooler de Supabase en modo transacción.
 - **Drizzle ORM**.
 - **Resend** para emails.
 - **Vitest** para tests.
@@ -67,38 +67,40 @@ La lógica de chequeo vive en `lib/check-prices.ts` como una función `checkPric
 
 - **Cron local:** `launchd` de macOS ejecuta `tsx scripts/check-prices.ts` una vez al día, que llama `checkPrices({ source: "cron" })` directo. No necesita que `next dev` esté corriendo.
 - **Ruta `/api/check-prices`:**
-  - `GET` con header `Authorization: Bearer ${CRON_SECRET}` → `source: "cron"`. Es la forma en que llama Vercel Cron (siempre usa GET y envía ese header cuando `CRON_SECRET` está definido).
-  - `POST` desde el dashboard con `{ trackedUrlId }` → `source: "manual"`.
-  - El `source` se deduce del método y la autenticación, nunca de un parámetro del cliente, así que nadie puede disparar emails desde fuera sin el secreto.
+    - `GET` con header `Authorization: Bearer ${CRON_SECRET}` → `source: "cron"`. Es la forma en que llama Vercel Cron (siempre usa GET y envía ese header cuando `CRON_SECRET` está definido).
+    - `POST` desde el dashboard con `{ trackedUrlId }` → `source: "manual"`.
+    - El `source` se deduce del método y la autenticación, nunca de un parámetro del cliente, así que nadie puede disparar emails desde fuera sin el secreto.
 
 ## Modelo de datos
 
 ### `tracked_urls`
-| campo | tipo | notas |
-|---|---|---|
-| `id` | serial PK | |
-| `url` | text | URL de solotodo.cl tal como la pegó el usuario (referencia) |
-| `label` | text | nombre definido por el usuario |
-| `category_id` | int, nullable | categoría de la API; null si no se pudo resolver |
-| `params` | jsonb | params combinados que se envían a `browse` (sin `ordering`) |
-| `status` | text | `ok` \| `needs_review` |
-| `active` | boolean | pausada o no; se cambia desde el dashboard |
-| `created_at` | timestamp | |
+
+| campo         | tipo          | notas                                                       |
+| ------------- | ------------- | ----------------------------------------------------------- |
+| `id`          | serial PK     |                                                             |
+| `url`         | text          | URL de solotodo.cl tal como la pegó el usuario (referencia) |
+| `label`       | text          | nombre definido por el usuario                              |
+| `category_id` | int, nullable | categoría de la API; null si no se pudo resolver            |
+| `params`      | jsonb         | params combinados que se envían a `browse` (sin `ordering`) |
+| `status`      | text          | `ok` \| `needs_review`                                      |
+| `active`      | boolean       | pausada o no; se cambia desde el dashboard                  |
+| `created_at`  | timestamp     |                                                             |
 
 ### `price_checks`
-| campo | tipo | notas |
-|---|---|---|
-| `id` | serial PK | |
-| `tracked_url_id` | FK → `tracked_urls`, on delete cascade | |
-| `checked_at` | timestamp | |
-| `source` | text | `cron` \| `manual` |
-| `product_id` | int | id del producto en SoloTodo |
-| `product_name` | text | |
-| `product_slug` | text | para armar el link a la ficha |
-| `normal_price` | integer | CLP; precio usado para comparar |
-| `offer_price` | integer | CLP; informativo |
-| `store_name` | text, nullable | tienda con el menor `normal_price`; informativo |
-| `store_url` | text, nullable | `external_url` de esa oferta (página del producto en la tienda); informativo |
+
+| campo            | tipo                                   | notas                                                                        |
+| ---------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
+| `id`             | serial PK                              |                                                                              |
+| `tracked_url_id` | FK → `tracked_urls`, on delete cascade |                                                                              |
+| `checked_at`     | timestamp                              |                                                                              |
+| `source`         | text                                   | `cron` \| `manual`                                                           |
+| `product_id`     | int                                    | id del producto en SoloTodo                                                  |
+| `product_name`   | text                                   |                                                                              |
+| `product_slug`   | text                                   | para armar el link a la ficha                                                |
+| `normal_price`   | integer                                | CLP; precio usado para comparar                                              |
+| `offer_price`    | integer                                | CLP; informativo                                                             |
+| `store_name`     | text, nullable                         | tienda con el menor `normal_price`; informativo                              |
+| `store_url`      | text, nullable                         | `external_url` de esa oferta (página del producto en la tienda); informativo |
 
 Como `product_id` queda registrado en cada chequeo, una consulta futura (`WHERE product_id = X ORDER BY checked_at`) entrega el histórico de un producto específico. No se necesita otra tabla para eso hoy.
 
@@ -111,8 +113,8 @@ Al agregar una URL:
 3. Combinar los params implícitos con los query params de la URL; si una clave aparece en ambos, gana el de la URL. Se descarta `ordering`, porque el chequeo siempre fuerza el suyo.
 4. Hacer un llamado de prueba a `/categories/{category_id}/browse/` con esos params.
 5. Resultado:
-   - Categoría resuelta y ≥ 1 resultado → `status: "ok"`.
-   - No se encontró la categoría en el HTML, la llamada falla o devuelve 0 resultados → se guarda igual con `status: "needs_review"`. Las URLs en ese estado no se chequean hasta que se corrijan `category_id`/`params` directo en la base de datos (no hay editor en el dashboard; es un caso ocasional).
+    - Categoría resuelta y ≥ 1 resultado → `status: "ok"`.
+    - No se encontró la categoría en el HTML, la llamada falla o devuelve 0 resultados → se guarda igual con `status: "needs_review"`. Las URLs en ese estado no se chequean hasta que se corrijan `category_id`/`params` directo en la base de datos (no hay editor en el dashboard; es un caso ocasional).
 
 La extracción desde el HTML depende de la estructura interna del sitio y puede romperse si SoloTodo la cambia; por eso existe `needs_review`, y no se asume que la resolución siempre funciona.
 
@@ -148,6 +150,7 @@ Reglas explícitas:
 Página única.
 
 **Lista de URLs trackeadas**, cada fila muestra:
+
 - `label` y nombre del producto más barato actual. El nombre es un link a la ficha del producto en SoloTodo.
 - Tienda (secundario, informativo), como link a su página del producto. Se omite si el último registro no la tiene.
 - `normal_price` actual (destacado) y `offer_price` (secundario, rotulado como precio con medio de pago específico).
@@ -177,8 +180,8 @@ Página única.
 ## Testing
 
 - **Vitest**, unit tests de:
-  - `checkPrices`: baja/sube/igual; primer chequeo sin email; `source: "manual"` nunca envía email; cambio de producto más barato cuenta como baja; selección del menor `normal_price` dentro de la página aunque venga desordenada; falla al obtener la tienda → registro insertado con tienda null y comparación/email sin cambios; selección de la oferta disponible más barata ignorando las no disponibles.
-  - `resolve-url`: host inválido rechazado; extracción de categoría y params implícitos desde un fixture HTML real guardado en el repo; combinación de params con prioridad de la URL; descarte de `ordering`; casos que terminan en `needs_review`.
-  - Cliente `solotodo.ts` con respuestas mockeadas: éxito, 0 resultados, error 5xx, forma inesperada.
+    - `checkPrices`: baja/sube/igual; primer chequeo sin email; `source: "manual"` nunca envía email; cambio de producto más barato cuenta como baja; selección del menor `normal_price` dentro de la página aunque venga desordenada; falla al obtener la tienda → registro insertado con tienda null y comparación/email sin cambios; selección de la oferta disponible más barata ignorando las no disponibles.
+    - `resolve-url`: host inválido rechazado; extracción de categoría y params implícitos desde un fixture HTML real guardado en el repo; combinación de params con prioridad de la URL; descarte de `ordering`; casos que terminan en `needs_review`.
+    - Cliente `solotodo.ts` con respuestas mockeadas: éxito, 0 resultados, error 5xx, forma inesperada.
 - Sin E2E automatizado del dashboard (página única, personal, bajo riesgo).
 - Verificación manual una vez antes de dejarlo corriendo: agregar la URL de SSDs de ejemplo → ejecutar `scripts/check-prices.ts` → alterar el último registro en la DB a un precio mayor → ejecutar de nuevo y confirmar que llega el email real de Resend.

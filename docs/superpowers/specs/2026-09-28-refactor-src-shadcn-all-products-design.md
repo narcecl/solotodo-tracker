@@ -99,25 +99,25 @@ Se define en `src/lib/db/schema.ts` con Drizzle y la migración se genera con `n
 
 ```ts
 export interface CheckProduct {
-  productId: number;
-  name: string;
-  slug: string;
-  normalPrice: number;
-  offerPrice: number;
-  position: number; // 0 = más barato
+    productId: number;
+    name: string;
+    slug: string;
+    normalPrice: number;
+    offerPrice: number;
+    position: number; // 0 = más barato
 }
 
-export type ProductChangeKind = "down" | "up" | "same" | "new";
+export type ProductChangeKind = 'down' | 'up' | 'same' | 'new';
 
 export interface ProductChange extends CheckProduct {
-  previousNormalPrice: number | null; // null si kind === "new"
-  kind: ProductChangeKind;
+    previousNormalPrice: number | null; // null si kind === "new"
+    kind: ProductChangeKind;
 }
 
 export interface PriceChangeAlert {
-  label: string;
-  listingUrl: string;
-  products: ProductChange[]; // ordenados por position
+    label: string;
+    listingUrl: string;
+    products: ProductChange[]; // ordenados por position
 }
 ```
 
@@ -127,11 +127,11 @@ export interface PriceChangeAlert {
 
 ```ts
 export interface PriceRepo {
-  listCheckableUrls(): Promise<TrackedUrl[]>;
-  getTrackedUrl(id: number): Promise<TrackedUrl | null>;
-  getLastCheck(trackedUrlId: number): Promise<PriceCheck | null>;
-  getCheckProducts(priceCheckId: number): Promise<CheckProduct[]>;
-  insertCheck(check: NewPriceCheck, products: CheckProduct[]): Promise<PriceCheck>;
+    listCheckableUrls(): Promise<TrackedUrl[]>;
+    getTrackedUrl(id: number): Promise<TrackedUrl | null>;
+    getLastCheck(trackedUrlId: number): Promise<PriceCheck | null>;
+    getCheckProducts(priceCheckId: number): Promise<CheckProduct[]>;
+    insertCheck(check: NewPriceCheck, products: CheckProduct[]): Promise<PriceCheck>;
 }
 ```
 
@@ -146,13 +146,13 @@ export interface PriceRepo {
 4. Se leen el chequeo anterior (`getLastCheck`) y sus productos (`getCheckProducts`) **antes** de insertar el nuevo.
 5. `insertCheck(resumen, productos)`.
 6. Se construye `ProductChange[]` comparando por **`product_id`** contra los productos del chequeo anterior:
-   - Está en ambos y el `normalPrice` bajó → `down`; subió → `up`; igual → `same`.
-   - Está solo en el actual → `new` (se muestra, **no dispara email**).
-   - Está solo en el anterior (desapareció) → **se ignora**: no aparece en la lista ni dispara email.
+    - Está en ambos y el `normalPrice` bajó → `down`; subió → `up`; igual → `same`.
+    - Está solo en el actual → `new` (se muestra, **no dispara email**).
+    - Está solo en el anterior (desapareció) → **se ignora**: no aparece en la lista ni dispara email.
 7. Se envía el email solo si se cumple todo esto:
-   - `source === "cron"` (los refrescos manuales nunca alertan, igual que hoy).
-   - El chequeo anterior existe y **tiene productos**. Los chequeos históricos previos a la migración no tienen filas en `url_check_products`, así que el primer chequeo después de la migración no alerta.
-   - Hay al menos un producto con `kind` `down` o `up`.
+    - `source === "cron"` (los refrescos manuales nunca alertan, igual que hoy).
+    - El chequeo anterior existe y **tiene productos**. Los chequeos históricos previos a la migración no tienen filas en `url_check_products`, así que el primer chequeo después de la migración no alerta.
+    - Hay al menos un producto con `kind` `down` o `up`.
 8. `CheckSummary.alerts` cuenta los emails enviados (uno por URL como máximo).
 
 Hay un caso borde aceptado: si el producto más barato desaparece, el mínimo del listado sube, pero no se alerta, porque ningún producto presente en ambos chequeos cambió de precio.
@@ -161,11 +161,11 @@ Hay un caso borde aceptado: si el producto más barato desaparece, el mínimo de
 
 - `page.tsx` obtiene URLs y chequeos (como hoy). Toma los IDs de los **dos últimos** chequeos por URL y llama a `listProductsForChecks`.
 - `buildDashboardRows(urls, checks, productsByCheck)` sigue siendo una función pura. Agrega a `DashboardRow`:
-  - `products: ProductChange[]`: productos del último chequeo, comparados contra el penúltimo con la misma regla que el chequeo. Si el penúltimo no tiene productos, todos van con `kind: "same"` y `previousNormalPrice: null`, sin badge.
+    - `products: ProductChange[]`: productos del último chequeo, comparados contra el penúltimo con la misma regla que el chequeo. Si el penúltimo no tiene productos, todos van con `kind: "same"` y `previousNormalPrice: null`, sin badge.
 - `TrackedUrlRow` renderiza:
-  - El producto con `position = 0` como tarjeta principal (`Card`): nombre, precio, tienda y sparkline, igual que hoy.
-  - Si hay más de un producto, un `Accordion` titulado "Ver N productos más" con el resto (`position > 0`) en una `Table` compacta: nombre (con link a la ficha), precio normal, precio con medio de pago y badge.
-  - Badges por producto: `↓ bajó $X` (verde), `↑ subió $X` (rojo), `Nuevo` (neutro). Sin badge si `same`.
+    - El producto con `position = 0` como tarjeta principal (`Card`): nombre, precio, tienda y sparkline, igual que hoy.
+    - Si hay más de un producto, un `Accordion` titulado "Ver N productos más" con el resto (`position > 0`) en una `Table` compacta: nombre (con link a la ficha), precio normal, precio con medio de pago y badge.
+    - Badges por producto: `↓ bajó $X` (verde), `↑ subió $X` (rojo), `Nuevo` (neutro). Sin badge si `same`.
 - Si el último chequeo no tiene productos (histórico), se muestra solo la tarjeta principal desde `price_checks`, sin accordion.
 
 ### Email
@@ -173,8 +173,8 @@ Hay un caso borde aceptado: si el producto más barato desaparece, el mínimo de
 - `buildAlertEmail(alert: PriceChangeAlert)` y `createAlertSender` reciben el alert nuevo.
 - Asunto: `Hubo cambios de precio en <label>`.
 - HTML: tabla con todos los productos ordenados por `position`, con nombre (link a la ficha), precio normal y precio con medio de pago.
-  - En los productos `down` o `up`, el precio va como `<s>anterior</s> → nuevo`, con una flecha ↓ en verde o ↑ en rojo.
-  - Los productos `new` llevan la etiqueta "Nuevo".
+    - En los productos `down` o `up`, el precio va como `<s>anterior</s> → nuevo`, con una flecha ↓ en verde o ↑ en rojo.
+    - Los productos `new` llevan la etiqueta "Nuevo".
 - Texto plano equivalente, con una línea por producto y la marca ↓/↑ en los que cambiaron.
 - Incluye un link al listado (`listingUrl`).
 
@@ -190,6 +190,7 @@ Hay un caso borde aceptado: si el producto más barato desaparece, el mínimo de
 Tooltip queda fuera. "Revisión pendiente" mantiene su atributo `title` nativo.
 
 Notas de `shadcn init`:
+
 - Crea `components.json` con los aliases `@/components` y `@/lib/utils`, y el archivo `src/lib/utils.ts`.
 - Reescribe `src/app/globals.css` con sus variables CSS, lo que cambia la paleta. Se aceptan los colores por defecto de shadcn (base neutral), manteniendo el dark mode por `prefers-color-scheme`.
 - Si el CLI no soporta Next 16 o Tailwind v4, se instalan los componentes a mano desde el registry.
@@ -208,24 +209,27 @@ Todos los tests usan repos y clientes mockeados. No se agrega una base de datos 
 
 - Los imports `@/...` de los tests existentes siguen funcionando gracias al alias. Solo cambian los que apuntan a `@/app/components` (→ `@/components/dashboard`).
 - Tests que cambian de semántica:
-  - `tests/check-prices.test.ts`: `insertCheck` recibe los productos ordenados con su `position`; la alerta se dispara con subidas y bajadas; no alerta con `source: "manual"`, ni sin chequeo anterior, ni si el anterior no tiene productos, ni por productos solo nuevos o desaparecidos; y el más barato se calcula por precio en CLP aunque la API devuelva otro orden.
-  - `tests/email.test.ts`: reemplazado por el formato multi-producto (asunto, tabla, marcas ↓/↑, "Nuevo", escape de HTML).
-  - `tests/dashboard.test.ts`: `products` con `kind` correcto, dashboard sin accordion para chequeos históricos sin productos.
+    - `tests/check-prices.test.ts`: `insertCheck` recibe los productos ordenados con su `position`; la alerta se dispara con subidas y bajadas; no alerta con `source: "manual"`, ni sin chequeo anterior, ni si el anterior no tiene productos, ni por productos solo nuevos o desaparecidos; y el más barato se calcula por precio en CLP aunque la API devuelva otro orden.
+    - `tests/email.test.ts`: reemplazado por el formato multi-producto (asunto, tabla, marcas ↓/↑, "Nuevo", escape de HTML).
+    - `tests/dashboard.test.ts`: `products` con `kind` correcto, dashboard sin accordion para chequeos históricos sin productos.
 - Test nuevo: `tests/product-changes.test.ts`, para la función pura que compara productos (`diffProducts(current, previous)`), compartida entre el chequeo y el dashboard.
 
 ## Plan de migración
 
 ### Paso 1a: Mover a `src/` (commit propio, sin cambios de comportamiento)
+
 - Mover `app/` → `src/app/`, `lib/` → `src/lib/` y `app/components/` → `src/components/dashboard/`.
 - Actualizar `tsconfig.json`, `vitest.config.ts` y `drizzle.config.ts`, y los imports de `scripts/check-prices.ts`.
 - Verificar: `npm test`, `npm run typecheck`, `npm run build`, `npm run check-prices` (en local).
 
 ### Paso 1b: shadcn/ui (commit propio)
+
 - `npx shadcn@latest init` e instalar los componentes listados.
 - Reemplazar los componentes planos por shadcn/ui, sin cambiar funcionalidad.
 - Verificar: typecheck, build y revisión visual con `npm run dev`.
 
 ### Paso 2: Guardar todos los productos
+
 - Agregar la tabla `url_check_products` al schema, y generar y aplicar la migración.
 - Agregar `diffProducts` y los tipos nuevos.
 - Modificar `PriceRepo` (`insertCheck` transaccional, `getCheckProducts`, `listProductsForChecks`).
@@ -233,6 +237,7 @@ Todos los tests usan repos y clientes mockeados. No se agrega una base de datos 
 - Verificar con tests.
 
 ### Paso 3: Dashboard + email multi-producto
+
 - Actualizar `buildDashboardRows` y `page.tsx`.
 - Implementar la tarjeta, el accordion, la tabla y los badges en `TrackedUrlRow`.
 - Reemplazar `buildAlertEmail` por el formato multi-producto.
