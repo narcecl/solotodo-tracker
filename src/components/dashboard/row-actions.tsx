@@ -1,67 +1,60 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { EllipsisVertical } from 'lucide-react';
+import { syncTrackedUrlAction } from '@/app/actions/check-prices';
+import { deleteTrackedUrlAction, setTrackedUrlActiveAction } from '@/app/actions/tracked-urls';
+import type { ActionResult } from '@/app/actions/types';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { EllipsisVertical } from 'lucide-react';
+import type { TrackedUrl } from '@/lib/types';
+import { EditUrlForm } from './edit-url-form';
 
-interface Props {
-    id: number;
-    active: boolean;
-    canRefresh: boolean;
-}
-
-export function RowActions({ id, active, canRefresh }: Props) {
-    const router = useRouter();
+export function RowActions({ tracked }: { tracked: TrackedUrl }) {
     const [pending, startTransition] = useTransition();
     const [error, setError] = useState<string | null>(null);
+    const [editOpen, setEditOpen] = useState(false);
+    // Cambia en cada apertura para remontar el form con los valores actuales
+    const [editKey, setEditKey] = useState(0);
+    const canRefresh = tracked.status === 'ok';
 
-    function run(request: () => Promise<Response>, failure: string) {
+    function run(action: () => Promise<ActionResult<unknown>>, failure: string) {
         setError(null);
         startTransition(async () => {
-            const response = await request().catch(() => null);
-            if (!response?.ok) {
-                setError(failure);
-                return;
-            }
-            router.refresh();
+            const result = await action().catch(() => null);
+            if (!result?.ok) setError(result?.error ?? failure);
         });
     }
 
-    const refresh = () =>
-        run(
-            () =>
-                fetch('/api/check-prices', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ trackedUrlId: id }),
-                }),
-            'No se pudo actualizar el precio',
-        );
+    const refresh = () => run(() => syncTrackedUrlAction(tracked.id), 'No se pudo actualizar el precio');
 
     const toggle = () =>
-        run(
-            () =>
-                fetch(`/api/tracked-urls/${id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ active: !active }),
-                }),
-            active ? 'No se pudo pausar' : 'No se pudo reactivar',
-        );
+        run(() => setTrackedUrlActiveAction(tracked.id, !tracked.active), tracked.active ? 'No se pudo pausar' : 'No se pudo reactivar');
 
     const remove = () => {
         if (!confirm('¿Eliminar esta URL y todo su historial?')) return;
-        run(() => fetch(`/api/tracked-urls/${id}`, { method: 'DELETE' }), 'No se pudo eliminar');
+        run(() => deleteTrackedUrlAction(tracked.id), 'No se pudo eliminar');
+    };
+
+    const openEdit = () => {
+        setEditKey((key) => key + 1);
+        setEditOpen(true);
     };
 
     return (
-        <div className="flex flex-col items-end gap-1">
+        // Los eventos de React burbujean a través de los portals del dropdown y el dialog:
+        // sin esto, cualquier click aquí abre/cierra el accordion de la tarjeta.
+        <div
+            className="flex flex-col items-end gap-1"
+            onClick={(event) => event.stopPropagation()}
+        >
             <div className="flex gap-2">
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="ghost">
+                        <Button
+                            variant="ghost"
+                            disabled={pending}
+                        >
                             <EllipsisVertical className="size-4" />
                         </Button>
                     </DropdownMenuTrigger>
@@ -70,8 +63,9 @@ export function RowActions({ id, active, canRefresh }: Props) {
                         align="start"
                     >
                         <DropdownMenuGroup>
+                            <DropdownMenuItem onSelect={openEdit}>Editar</DropdownMenuItem>
                             {canRefresh && <DropdownMenuItem onClick={refresh}>Sincronizar</DropdownMenuItem>}
-                            <DropdownMenuItem onClick={toggle}>{active ? 'Pausar' : 'Reactivar'}</DropdownMenuItem>
+                            <DropdownMenuItem onClick={toggle}>{tracked.active ? 'Pausar' : 'Reactivar'}</DropdownMenuItem>
                             <DropdownMenuItem onClick={remove}>Eliminar</DropdownMenuItem>
                         </DropdownMenuGroup>
                     </DropdownMenuContent>
@@ -85,6 +79,13 @@ export function RowActions({ id, active, canRefresh }: Props) {
                     {error}
                 </p>
             )}
+            {/* Fuera de DropdownMenuContent: evita que Radix deje pointer-events/foco bloqueados */}
+            <EditUrlForm
+                key={editKey}
+                tracked={tracked}
+                open={editOpen}
+                onOpenChange={setEditOpen}
+            />
         </div>
     );
 }

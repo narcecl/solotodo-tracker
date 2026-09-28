@@ -40,7 +40,7 @@ export function TrackedUrlRow({ row }: { row: DashboardRow }) {
                                     <Badge
                                         variant="outline"
                                         className="border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-300"
-                                        title="No se pudo resolver la URL. Corrige category_id y params en la base de datos."
+                                        title="No se pudo resolver la URL. Usa Editar para corregir categoría y parámetros."
                                     >
                                         ⚠ Revisión pendiente
                                     </Badge>
@@ -60,11 +60,7 @@ export function TrackedUrlRow({ row }: { row: DashboardRow }) {
                             </div>
                         ) : null}
                         <div className="flex items-center gap-2">
-                            <RowActions
-                                id={tracked.id}
-                                active={tracked.active}
-                                canRefresh={!needsReview}
-                            />
+                            <RowActions tracked={tracked} />
                         </div>
                     </div>
                 </CardHeader>
