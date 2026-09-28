@@ -20,13 +20,14 @@ Uso personal, un solo usuario, sin autenticación de usuarios.
 - Cada resultado trae dos precios en CLP: `normal_price` (precio real/general) y `offer_price` (precio con un medio de pago específico, ej. efectivo/transferencia). La API acepta `ordering=normal_price_usd` y `ordering=offer_price_usd`.
 - Estructura de respuesta: `results[]` (buckets, 10 por página) → `product_entries[0]` → `product` (`id`, `name`, `slug`, …) y `metadata.prices_per_currency[0]` (`normal_price`, `offer_price`). La tienda no viene en esta respuesta.
 - Link a la ficha: `https://www.solotodo.cl/products/{id}-{slug}` (`/products/{id}` también redirige a la ficha).
+- La tienda se obtiene con una llamada extra: `GET /products/{id}/entities/` devuelve un array con la oferta de cada tienda (`store` id, `external_url` a la página del producto en la tienda y `active_registry` con `is_available`, `normal_price`, `offer_price`). Muchas ofertas no están disponibles (en el ejemplo, 1 de 26). `GET /stores/` devuelve la lista completa de tiendas (368) con `id` y `name` en una sola llamada. Ejemplo verificado: la oferta disponible del SSD más barato es de MyShop, con los mismos precios que muestra `browse`.
 
 ## Alcance
 
 - Cada `tracked_url` representa un **listado filtrado** de SoloTodo. Se trackea **el producto con menor `normal_price`** que cumple esos filtros en cada chequeo, no todos los productos del listado.
 - Se guardan ambos precios (`normal_price` y `offer_price`), pero la comparación y las alertas usan **`normal_price`**.
 - El stock no se trackea explícitamente: en `browse` solo aparecen productos con ofertas activas, así que "aparece en el listado" equivale a "hay stock en alguna tienda".
-- La tienda no se guarda. Cada fila del dashboard es un link a la ficha del producto en SoloTodo, donde se ven las tiendas.
+- La tienda con el menor `normal_price` se guarda **solo como dato informativo**: se muestra en el dashboard y en el email, pero no participa en la comparación, en las alertas ni en ninguna otra lógica. Si no se puede obtener, el chequeo continúa igual sin tienda.
 - Fuera de alcance: URLs de ficha de producto individual y autenticación de usuarios. El modelo de datos permite agregar un histórico por producto más adelante (ver Modelo de datos).
 
 ## Stack técnico
@@ -50,7 +51,7 @@ solotodo-tracker/
 │       └── check-prices/route.ts      # Wrapper HTTP de lib/check-prices
 ├── lib/
 │   ├── db/                            # Schema Drizzle + conexión
-│   ├── solotodo.ts                    # Cliente de api.solotodo.com (browse)
+│   ├── solotodo.ts                    # Cliente de api.solotodo.com (browse, entities, stores)
 │   ├── resolve-url.ts                 # URL de solotodo.cl → { category_id, params }
 │   ├── check-prices.ts                # Lógica de chequeo (sin dependencia de HTTP)
 │   └── email.ts                       # Envío de alertas vía Resend
@@ -93,6 +94,8 @@ La lógica de chequeo vive en `lib/check-prices.ts` como una función `checkPric
 | `product_slug` | text | para armar el link a la ficha |
 | `normal_price` | integer | CLP; precio usado para comparar |
 | `offer_price` | integer | CLP; informativo |
+| `store_name` | text, nullable | tienda con el menor `normal_price`; informativo |
+| `store_url` | text, nullable | `external_url` de esa oferta (página del producto en la tienda); informativo |
 
 Como `product_id` queda registrado en cada chequeo, una consulta futura (`WHERE product_id = X ORDER BY checked_at`) entrega el histórico de un producto específico. No se necesita otra tabla para eso hoy.
 
@@ -118,9 +121,10 @@ Para cada una:
 
 1. Llamar `/categories/{category_id}/browse/` con `params` + `ordering=normal_price_usd`.
 2. Tomar, dentro de la primera página, la entrada con menor `normal_price` (protege contra que la API ignore el `ordering`).
-3. Leer el último `price_check` de esa URL (de cualquier `source`).
-4. Insertar el nuevo `price_check` con `source`. Se inserta siempre que la llamada haya sido exitosa, suba, baje o se mantenga el precio.
-5. Si `source === "cron"` **y** existe un registro anterior **y** el nuevo `normal_price` es menor que el anterior → enviar email.
+3. Obtener la tienda (informativo): llamar `/products/{id}/entities/`, quedarse con las ofertas con `active_registry.is_available = true` y elegir la de menor `normal_price` (si hay empate, la primera). El nombre sale de `/stores/`, que se pide una sola vez por ejecución de `checkPrices`. Si cualquiera de estas llamadas falla o no hay oferta disponible, `store_name` y `store_url` quedan en null y el chequeo continúa.
+4. Leer el último `price_check` de esa URL (de cualquier `source`).
+5. Insertar el nuevo `price_check` con `source`. Se inserta siempre que la llamada haya sido exitosa, suba, baje o se mantenga el precio.
+6. Si `source === "cron"` **y** existe un registro anterior **y** el nuevo `normal_price` es menor que el anterior → enviar email.
 
 Reglas explícitas:
 
@@ -132,7 +136,7 @@ Reglas explícitas:
 
 - Solo con `source === "cron"` y baja de `normal_price` (ver arriba).
 - Destinatario: variable de entorno `ALERT_EMAIL`.
-- Contenido: `label` de la URL trackeada, nombre del producto, `normal_price` anterior → nuevo, `offer_price` actual y link a la ficha en SoloTodo.
+- Contenido: `label` de la URL trackeada, nombre del producto, `normal_price` anterior → nuevo, `offer_price` actual, link a la ficha en SoloTodo y, si está disponible, el nombre de la tienda con link a su página del producto.
 - Un email por baja, sin agrupación.
 - Si Resend falla, se loguea el error y la alerta se pierde. No hay reintento: el `price_check` ya quedó registrado, así que el próximo chequeo compara contra el precio nuevo. Es aceptable para una herramienta personal donde el dashboard sigue mostrando el cambio.
 
@@ -141,7 +145,8 @@ Reglas explícitas:
 Página única.
 
 **Lista de URLs trackeadas**, cada fila muestra:
-- `label` y nombre del producto más barato actual. El nombre es un link a la ficha del producto en SoloTodo (ahí se ven las tiendas).
+- `label` y nombre del producto más barato actual. El nombre es un link a la ficha del producto en SoloTodo.
+- Tienda (secundario, informativo), como link a su página del producto. Se omite si el último registro no la tiene.
 - `normal_price` actual (destacado) y `offer_price` (secundario, rotulado como precio con medio de pago específico).
 - Variación de `normal_price` vs. el registro anterior (baja / sube / sin cambio).
 - Fecha del último chequeo.
@@ -168,7 +173,7 @@ Página única.
 ## Testing
 
 - **Vitest**, unit tests de:
-  - `checkPrices`: baja/sube/igual; primer chequeo sin email; `source: "manual"` nunca envía email; cambio de producto más barato cuenta como baja; selección del menor `normal_price` dentro de la página aunque venga desordenada.
+  - `checkPrices`: baja/sube/igual; primer chequeo sin email; `source: "manual"` nunca envía email; cambio de producto más barato cuenta como baja; selección del menor `normal_price` dentro de la página aunque venga desordenada; falla al obtener la tienda → registro insertado con tienda null y comparación/email sin cambios; selección de la oferta disponible más barata ignorando las no disponibles.
   - `resolve-url`: host inválido rechazado; extracción de categoría y params implícitos desde un fixture HTML real guardado en el repo; combinación de params con prioridad de la URL; descarte de `ordering`; casos que terminan en `needs_review`.
   - Cliente `solotodo.ts` con respuestas mockeadas: éxito, 0 resultados, error 5xx, forma inesperada.
 - Sin E2E automatizado del dashboard (página única, personal, bajo riesgo).
