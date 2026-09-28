@@ -43,6 +43,28 @@ export interface StoreOffer {
   normalPrice: number;
 }
 
+export interface CheckProduct {
+  productId: number;
+  name: string;
+  slug: string;
+  normalPrice: number;
+  offerPrice: number;
+  position: number; // 0 = más barato
+}
+
+export type ProductChangeKind = "down" | "up" | "same" | "new";
+
+export interface ProductChange extends CheckProduct {
+  previousNormalPrice: number | null; // null si kind === "new" o no hay chequeo anterior con productos
+  kind: ProductChangeKind;
+}
+
+export interface PriceChangeAlert {
+  label: string;
+  listingUrl: string;
+  products: ProductChange[]; // ordenados por position
+}
+
 export interface PriceDropAlert {
   label: string;
   productName: string;
