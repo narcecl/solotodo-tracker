@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { DashboardRow } from '@/lib/dashboard';
+import { getCategoryIcon } from '@/lib/category-icons';
 import { formatCLP, formatFriendlyDate } from '@/lib/format';
 import { OtherProducts } from './other-products';
 import { RowActions } from './row-actions';
@@ -13,6 +14,7 @@ export function TrackedUrlRow({ row }: { row: DashboardRow }) {
     const { tracked, latest, products } = row;
     const needsReview = tracked.status === 'needs_review';
     const others = products.filter((p) => p.position > 0);
+    const Icon = getCategoryIcon(tracked.categoryId);
 
     const [open, setOpen] = useState(false);
 
@@ -24,7 +26,9 @@ export function TrackedUrlRow({ row }: { row: DashboardRow }) {
                     onClick={() => setOpen((o) => !o)}
                 >
                     <div className="flex items-center gap-4">
-                        <div className="size-11 border rounded-md"></div>
+                        <div className="flex size-11 items-center justify-center rounded-md border">
+                            <Icon className="size-5 text-muted-foreground" />
+                        </div>
                         <div className="flex flex-col">
                             <div className="flex items-center gap-2">
                                 <CardTitle>{tracked.label}</CardTitle>
