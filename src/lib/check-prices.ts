@@ -1,6 +1,7 @@
+import { toCheckProducts } from "./product-changes";
 import { productUrl, type SolotodoClient } from "./solotodo";
 import type {
-  BrowseEntry,
+  CheckProduct,
   CheckSource,
   NewPriceCheck,
   PriceCheck,
@@ -13,7 +14,8 @@ export interface PriceRepo {
   listCheckableUrls(): Promise<TrackedUrl[]>;
   getTrackedUrl(id: number): Promise<TrackedUrl | null>;
   getLastCheck(trackedUrlId: number): Promise<PriceCheck | null>;
-  insertCheck(check: NewPriceCheck): Promise<PriceCheck>;
+  getCheckProducts(priceCheckId: number): Promise<CheckProduct[]>;
+  insertCheck(check: NewPriceCheck, products: CheckProduct[]): Promise<PriceCheck>;
 }
 
 export interface CheckDeps {
@@ -78,24 +80,26 @@ async function checkOne(
 ): Promise<boolean> {
   if (tracked.categoryId === null) throw new Error("La URL no tiene categoría resuelta");
 
-  const cheapest: BrowseEntry | null = cheapestBy(
-    await deps.solotodo.browse(tracked.categoryId, tracked.params),
-  );
+  const products = toCheckProducts(await deps.solotodo.browse(tracked.categoryId, tracked.params));
+  const cheapest = products[0];
   if (!cheapest) throw new Error("El listado no devolvió resultados");
 
   const store = await findStore(deps, cheapest.productId, getStores);
   const previous = await deps.repo.getLastCheck(tracked.id);
-  const check = await deps.repo.insertCheck({
-    trackedUrlId: tracked.id,
-    source,
-    productId: cheapest.productId,
-    productName: cheapest.name,
-    productSlug: cheapest.slug,
-    normalPrice: cheapest.normalPrice,
-    offerPrice: cheapest.offerPrice,
-    storeName: store.name,
-    storeUrl: store.url,
-  });
+  const check = await deps.repo.insertCheck(
+    {
+      trackedUrlId: tracked.id,
+      source,
+      productId: cheapest.productId,
+      productName: cheapest.name,
+      productSlug: cheapest.slug,
+      normalPrice: cheapest.normalPrice,
+      offerPrice: cheapest.offerPrice,
+      storeName: store.name,
+      storeUrl: store.url,
+    },
+    products,
+  );
 
   if (source !== "cron" || previous === null || check.normalPrice >= previous.normalPrice) {
     return false;

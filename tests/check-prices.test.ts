@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { checkPrices, type CheckDeps, type PriceRepo } from "@/lib/check-prices";
 import type { SolotodoClient } from "@/lib/solotodo";
-import type { BrowseEntry, PriceCheck, StoreOffer, TrackedUrl } from "@/lib/types";
+import type { BrowseEntry, CheckProduct, PriceCheck, StoreOffer, TrackedUrl } from "@/lib/types";
 
 function tracked(overrides: Partial<TrackedUrl> = {}): TrackedUrl {
   return {
@@ -28,6 +28,18 @@ function entry(overrides: Partial<BrowseEntry> = {}): BrowseEntry {
   };
 }
 
+function product(overrides: Partial<CheckProduct> = {}): CheckProduct {
+  return {
+    productId: 127681,
+    name: "A-DATA XPG Gammix S70 BLADE 2 TB",
+    slug: "a-data-xpg-gammix-s70-blade-2-tb",
+    normalPrice: 400889,
+    offerPrice: 379990,
+    position: 0,
+    ...overrides,
+  };
+}
+
 function previousCheck(overrides: Partial<PriceCheck> = {}): PriceCheck {
   return {
     id: 100,
@@ -45,10 +57,15 @@ function previousCheck(overrides: Partial<PriceCheck> = {}): PriceCheck {
   };
 }
 
-function makeRepo(urls: TrackedUrl[], checks: PriceCheck[]): PriceRepo & { checks: PriceCheck[] } {
+function makeRepo(
+  urls: TrackedUrl[],
+  checks: PriceCheck[],
+  productsByCheck: Map<number, CheckProduct[]>,
+): PriceRepo & { checks: PriceCheck[]; productsByCheck: Map<number, CheckProduct[]> } {
   let nextId = 1000;
   return {
     checks,
+    productsByCheck,
     async listCheckableUrls() {
       return urls.filter((u) => u.active && u.status === "ok");
     },
@@ -58,9 +75,13 @@ function makeRepo(urls: TrackedUrl[], checks: PriceCheck[]): PriceRepo & { check
     async getLastCheck(trackedUrlId) {
       return checks.filter((c) => c.trackedUrlId === trackedUrlId).at(-1) ?? null;
     },
-    async insertCheck(check) {
+    async getCheckProducts(priceCheckId) {
+      return productsByCheck.get(priceCheckId) ?? [];
+    },
+    async insertCheck(check, products) {
       const saved: PriceCheck = { ...check, id: nextId++, checkedAt: new Date() };
       checks.push(saved);
+      productsByCheck.set(saved.id, products);
       return saved;
     },
   };
@@ -69,13 +90,16 @@ function makeRepo(urls: TrackedUrl[], checks: PriceCheck[]): PriceRepo & { check
 interface SetupOptions {
   urls?: TrackedUrl[];
   checks?: PriceCheck[];
+  previousProducts?: CheckProduct[];
   entries?: BrowseEntry[];
   offers?: StoreOffer[];
   stores?: Map<number, string>;
 }
 
 function setup(options: SetupOptions = {}) {
-  const repo = makeRepo(options.urls ?? [tracked()], options.checks ?? []);
+  const productsByCheck = new Map<number, CheckProduct[]>();
+  if (options.previousProducts) productsByCheck.set(100, options.previousProducts);
+  const repo = makeRepo(options.urls ?? [tracked()], options.checks ?? [], productsByCheck);
   const solotodo = {
     browse: vi.fn<SolotodoClient["browse"]>(async () => options.entries ?? [entry()]),
     getAvailableOffers: vi.fn<SolotodoClient["getAvailableOffers"]>(
@@ -295,5 +319,40 @@ describe("checkPrices: errores y selección de URLs", () => {
     });
     await checkPrices(deps, { source: "cron" });
     expect(solotodo.browse).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("checkPrices: productos del listado", () => {
+  it("guarda todos los productos ordenados por precio normal con su position", async () => {
+    const { deps, repo } = setup({
+      entries: [
+        entry({ productId: 1, normalPrice: 500000 }),
+        entry({ productId: 2, normalPrice: 350000 }),
+        entry({ productId: 3, normalPrice: 450000 }),
+      ],
+    });
+    await checkPrices(deps, { source: "cron" });
+    const saved = repo.checks.at(-1)!;
+    expect(saved).toMatchObject({ productId: 2, normalPrice: 350000 });
+    expect(repo.productsByCheck.get(saved.id)?.map((p) => [p.productId, p.normalPrice, p.position])).toEqual([
+      [2, 350000, 0],
+      [3, 450000, 1],
+      [1, 500000, 2],
+    ]);
+  });
+
+  it("busca la tienda solo del producto más barato", async () => {
+    const { deps, solotodo } = setup({
+      entries: [entry({ productId: 1, normalPrice: 500000 }), entry({ productId: 2, normalPrice: 350000 })],
+    });
+    await checkPrices(deps, { source: "cron" });
+    expect(solotodo.getAvailableOffers).toHaveBeenCalledTimes(1);
+    expect(solotodo.getAvailableOffers).toHaveBeenCalledWith(2);
+  });
+
+  it("también guarda los productos en chequeos manuales", async () => {
+    const { deps, repo } = setup();
+    await checkPrices(deps, { source: "manual", trackedUrlId: 1 });
+    expect(repo.productsByCheck.get(repo.checks.at(-1)!.id)).toEqual([product()]);
   });
 });

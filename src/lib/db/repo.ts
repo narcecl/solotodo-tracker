@@ -1,8 +1,17 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { PriceRepo } from "../check-prices";
-import type { Params, PriceCheck, TrackedUrl, TrackedUrlStatus } from "../types";
+import type { CheckProduct, Params, PriceCheck, TrackedUrl, TrackedUrlStatus } from "../types";
 import { getDb } from "./index";
-import { priceChecks, trackedUrls } from "./schema";
+import { priceChecks, trackedUrls, urlCheckProducts } from "./schema";
+
+const productColumns = {
+  productId: urlCheckProducts.productId,
+  name: urlCheckProducts.name,
+  slug: urlCheckProducts.slug,
+  normalPrice: urlCheckProducts.normalPrice,
+  offerPrice: urlCheckProducts.offerPrice,
+  position: urlCheckProducts.position,
+};
 
 export const priceRepo: PriceRepo = {
   async listCheckableUrls() {
@@ -28,9 +37,23 @@ export const priceRepo: PriceRepo = {
     return row ?? null;
   },
 
-  async insertCheck(check) {
-    const [row] = await getDb().insert(priceChecks).values(check).returning();
-    return row;
+  async getCheckProducts(priceCheckId) {
+    return getDb()
+      .select(productColumns)
+      .from(urlCheckProducts)
+      .where(eq(urlCheckProducts.priceCheckId, priceCheckId))
+      .orderBy(asc(urlCheckProducts.position));
+  },
+
+  async insertCheck(check, products) {
+    // Resumen y productos se guardan juntos o no se guarda nada
+    return getDb().transaction(async (tx) => {
+      const [row] = await tx.insert(priceChecks).values(check).returning();
+      if (products.length > 0) {
+        await tx.insert(urlCheckProducts).values(products.map((p) => ({ ...p, priceCheckId: row.id })));
+      }
+      return row;
+    });
   },
 };
 
@@ -40,6 +63,22 @@ export async function listTrackedUrls(): Promise<TrackedUrl[]> {
 
 export async function listAllChecks(): Promise<PriceCheck[]> {
   return getDb().select().from(priceChecks).orderBy(asc(priceChecks.checkedAt), asc(priceChecks.id));
+}
+
+export async function listProductsForChecks(checkIds: number[]): Promise<Map<number, CheckProduct[]>> {
+  const byCheck = new Map<number, CheckProduct[]>();
+  if (checkIds.length === 0) return byCheck;
+  const rows = await getDb()
+    .select({ priceCheckId: urlCheckProducts.priceCheckId, ...productColumns })
+    .from(urlCheckProducts)
+    .where(inArray(urlCheckProducts.priceCheckId, checkIds))
+    .orderBy(asc(urlCheckProducts.priceCheckId), asc(urlCheckProducts.position));
+  for (const { priceCheckId, ...product } of rows) {
+    const list = byCheck.get(priceCheckId) ?? [];
+    list.push(product);
+    byCheck.set(priceCheckId, list);
+  }
+  return byCheck;
 }
 
 export async function createTrackedUrl(input: {
