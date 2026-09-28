@@ -1,7 +1,7 @@
 # SoloTodo Tracker
 
 Seguimiento personal de precios sobre listados filtrados de [SoloTodo](https://www.solotodo.cl).
-Cada día guarda el precio normal del producto más barato de cada listado y envía un email si bajó.
+Cada día guarda todos los productos de cada listado (destacando el más barato) y envía un email si alguno cambió de precio normal.
 
 Diseño: `docs/superpowers/specs/2026-09-28-solotodo-price-tracker-design.md`
 

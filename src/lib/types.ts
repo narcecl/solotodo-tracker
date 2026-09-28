@@ -65,13 +65,4 @@ export interface PriceChangeAlert {
   products: ProductChange[]; // ordenados por position
 }
 
-export interface PriceDropAlert {
-  label: string;
-  productName: string;
-  productUrl: string;
-  previousPrice: number;
-  newPrice: number;
-  offerPrice: number;
-  storeName: string | null;
-  storeUrl: string | null;
-}
+

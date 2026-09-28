@@ -1,11 +1,11 @@
-import { toCheckProducts } from "./product-changes";
-import { productUrl, type SolotodoClient } from "./solotodo";
+import { diffProducts, hasPriceChanges, toCheckProducts } from "./product-changes";
+import type { SolotodoClient } from "./solotodo";
 import type {
   CheckProduct,
   CheckSource,
   NewPriceCheck,
+  PriceChangeAlert,
   PriceCheck,
-  PriceDropAlert,
   StoreOffer,
   TrackedUrl,
 } from "./types";
@@ -21,7 +21,7 @@ export interface PriceRepo {
 export interface CheckDeps {
   repo: PriceRepo;
   solotodo: SolotodoClient;
-  sendAlert(alert: PriceDropAlert): Promise<void>;
+  sendAlert(alert: PriceChangeAlert): Promise<void>;
   logError(message: string, error: unknown): void;
 }
 
@@ -86,7 +86,8 @@ async function checkOne(
 
   const store = await findStore(deps, cheapest.productId, getStores);
   const previous = await deps.repo.getLastCheck(tracked.id);
-  const check = await deps.repo.insertCheck(
+  const previousProducts = previous ? await deps.repo.getCheckProducts(previous.id) : [];
+  await deps.repo.insertCheck(
     {
       trackedUrlId: tracked.id,
       source,
@@ -101,21 +102,13 @@ async function checkOne(
     products,
   );
 
-  if (source !== "cron" || previous === null || check.normalPrice >= previous.normalPrice) {
-    return false;
-  }
+  // Sin productos anteriores (primer chequeo o chequeo previo a la migración) no hay con qué comparar
+  if (source !== "cron" || previousProducts.length === 0) return false;
+  const changes = diffProducts(products, previousProducts);
+  if (!hasPriceChanges(changes)) return false;
 
   try {
-    await deps.sendAlert({
-      label: tracked.label,
-      productName: check.productName,
-      productUrl: productUrl(check.productId, check.productSlug),
-      previousPrice: previous.normalPrice,
-      newPrice: check.normalPrice,
-      offerPrice: check.offerPrice,
-      storeName: check.storeName,
-      storeUrl: check.storeUrl,
-    });
+    await deps.sendAlert({ label: tracked.label, listingUrl: tracked.url, products: changes });
     return true;
   } catch (error) {
     deps.logError(`No se pudo enviar la alerta de "${tracked.label}"`, error);

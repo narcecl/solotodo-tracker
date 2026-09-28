@@ -1,5 +1,6 @@
 import { formatCLP } from "./format";
-import type { PriceDropAlert } from "./types";
+import { productUrl } from "./solotodo";
+import type { PriceChangeAlert, ProductChange } from "./types";
 
 export const DEFAULT_ALERT_FROM = "SoloTodo Tracker <onboarding@resend.dev>";
 
@@ -21,6 +22,11 @@ export interface ResendLike {
   };
 }
 
+const MARK = {
+  down: { symbol: "↓", color: "#15803d" },
+  up: { symbol: "↑", color: "#dc2626" },
+} as const;
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -30,42 +36,57 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
-export function buildAlertEmail(alert: PriceDropAlert): EmailMessage {
-  const previous = formatCLP(alert.previousPrice);
-  const current = formatCLP(alert.newPrice);
-  const offer = formatCLP(alert.offerPrice);
+function changed(p: ProductChange): p is ProductChange & { kind: "down" | "up"; previousNormalPrice: number } {
+  return (p.kind === "down" || p.kind === "up") && p.previousNormalPrice !== null;
+}
 
-  const htmlLines = [
-    `<p><strong>${escapeHtml(alert.label)}</strong></p>`,
-    `<p><a href="${escapeHtml(alert.productUrl)}">${escapeHtml(alert.productName)}</a></p>`,
-    `<p>Precio normal: <s>${previous}</s> → <strong>${current}</strong></p>`,
-    `<p>Precio con medio de pago específico: ${offer}</p>`,
-  ];
-  const textLines = [
-    alert.label,
-    alert.productName,
-    `Precio normal: ${previous} → ${current}`,
-    `Precio con medio de pago específico: ${offer}`,
-    `Ficha en SoloTodo: ${alert.productUrl}`,
-  ];
-
-  if (alert.storeName) {
-    const name = escapeHtml(alert.storeName);
-    htmlLines.push(
-      `<p>Tienda: ${alert.storeUrl ? `<a href="${escapeHtml(alert.storeUrl)}">${name}</a>` : name}</p>`,
-    );
-    textLines.push(`Tienda: ${alert.storeName}${alert.storeUrl ? ` (${alert.storeUrl})` : ""}`);
+function priceHtml(p: ProductChange): string {
+  const current = formatCLP(p.normalPrice);
+  if (changed(p)) {
+    const { symbol, color } = MARK[p.kind];
+    return `<s>${formatCLP(p.previousNormalPrice)}</s> → <strong style="color:${color}">${symbol} ${current}</strong>`;
   }
+  return p.kind === "new" ? `${current} <em>Nuevo</em>` : current;
+}
 
-  return {
-    subject: `Bajó de precio: ${alert.label} · ${current}`,
-    html: htmlLines.join("\n"),
-    text: textLines.join("\n"),
-  };
+function priceText(p: ProductChange): string {
+  const current = formatCLP(p.normalPrice);
+  if (changed(p)) return `${formatCLP(p.previousNormalPrice)} → ${current} ${MARK[p.kind].symbol}`;
+  return p.kind === "new" ? `${current} (Nuevo)` : current;
+}
+
+export function buildAlertEmail(alert: PriceChangeAlert): EmailMessage {
+  const products = alert.products.toSorted((a, b) => a.position - b.position);
+
+  const rows = products.map((p) => {
+    const url = escapeHtml(productUrl(p.productId, p.slug));
+    return `<tr><td><a href="${url}">${escapeHtml(p.name)}</a></td><td>${priceHtml(p)}</td><td>${formatCLP(p.offerPrice)}</td></tr>`;
+  });
+  const html = [
+    `<p><strong>${escapeHtml(alert.label)}</strong> · <a href="${escapeHtml(alert.listingUrl)}">ver listado</a></p>`,
+    `<table cellpadding="6" style="border-collapse:collapse">`,
+    `<thead><tr><th align="left">Producto</th><th align="left">Precio normal</th><th align="left">Con medio de pago específico</th></tr></thead>`,
+    `<tbody>`,
+    ...rows,
+    `</tbody>`,
+    `</table>`,
+  ].join("\n");
+
+  const text = [
+    alert.label,
+    `Listado: ${alert.listingUrl}`,
+    "",
+    ...products.map(
+      (p) =>
+        `${p.name}: ${priceText(p)} · ${formatCLP(p.offerPrice)} con medio de pago específico · ${productUrl(p.productId, p.slug)}`,
+    ),
+  ].join("\n");
+
+  return { subject: `Hubo cambios de precio en ${alert.label}`, html, text };
 }
 
 export function createAlertSender(resend: ResendLike, config: { to: string; from: string }) {
-  return async function sendAlert(alert: PriceDropAlert): Promise<void> {
+  return async function sendAlert(alert: PriceChangeAlert): Promise<void> {
     const { error } = await resend.emails.send({
       from: config.from,
       to: config.to,

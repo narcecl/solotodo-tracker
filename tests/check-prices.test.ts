@@ -117,8 +117,13 @@ function setup(options: SetupOptions = {}) {
 }
 
 describe("checkPrices: comparación y alertas", () => {
-  it("cron + baja de precio: inserta el registro y envía el email", async () => {
-    const { deps, repo, sendAlert } = setup({ checks: [previousCheck({ normalPrice: 420000 })] });
+  const LISTING_URL = "https://www.solotodo.cl/ssd-m2-pcie-nvme";
+
+  it("cron + baja de precio: inserta el registro y envía el email con la lista", async () => {
+    const { deps, repo, sendAlert } = setup({
+      checks: [previousCheck()],
+      previousProducts: [product({ normalPrice: 420000 })],
+    });
 
     const summary = await checkPrices(deps, { source: "cron" });
 
@@ -134,26 +139,25 @@ describe("checkPrices: comparación y alertas", () => {
     });
     expect(sendAlert).toHaveBeenCalledWith({
       label: "SSD 2TB",
-      productName: "A-DATA XPG Gammix S70 BLADE 2 TB",
-      productUrl: "https://www.solotodo.cl/products/127681-a-data-xpg-gammix-s70-blade-2-tb",
-      previousPrice: 420000,
-      newPrice: 400889,
-      offerPrice: 379990,
-      storeName: "MyShop",
-      storeUrl: "https://myshop.cl/p26990",
+      listingUrl: LISTING_URL,
+      products: [{ ...product(), previousNormalPrice: 420000, kind: "down" }],
     });
   });
 
-  it("cron + precio mayor: inserta sin email", async () => {
-    const { deps, repo, sendAlert } = setup({ checks: [previousCheck({ normalPrice: 390000 })] });
+  it("cron + subida de precio: también envía email", async () => {
+    const { deps, sendAlert } = setup({
+      checks: [previousCheck()],
+      previousProducts: [product({ normalPrice: 390000 })],
+    });
     const summary = await checkPrices(deps, { source: "cron" });
-    expect(summary).toEqual({ checked: 1, failed: 0, alerts: 0 });
-    expect(repo.checks).toHaveLength(2);
-    expect(sendAlert).not.toHaveBeenCalled();
+    expect(summary.alerts).toBe(1);
+    expect(sendAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ products: [{ ...product(), previousNormalPrice: 390000, kind: "up" }] }),
+    );
   });
 
   it("cron + mismo precio: inserta sin email", async () => {
-    const { deps, repo, sendAlert } = setup({ checks: [previousCheck({ normalPrice: 400889 })] });
+    const { deps, repo, sendAlert } = setup({ checks: [previousCheck()], previousProducts: [product()] });
     await checkPrices(deps, { source: "cron" });
     expect(repo.checks).toHaveLength(2);
     expect(sendAlert).not.toHaveBeenCalled();
@@ -166,8 +170,19 @@ describe("checkPrices: comparación y alertas", () => {
     expect(sendAlert).not.toHaveBeenCalled();
   });
 
-  it("manual + baja de precio: inserta con source manual y nunca envía email", async () => {
+  it("chequeo anterior sin productos (previo a la migración): inserta sin email", async () => {
     const { deps, repo, sendAlert } = setup({ checks: [previousCheck({ normalPrice: 420000 })] });
+    const summary = await checkPrices(deps, { source: "cron" });
+    expect(summary).toEqual({ checked: 1, failed: 0, alerts: 0 });
+    expect(repo.checks).toHaveLength(2);
+    expect(sendAlert).not.toHaveBeenCalled();
+  });
+
+  it("manual + baja de precio: inserta con source manual y nunca envía email", async () => {
+    const { deps, repo, sendAlert } = setup({
+      checks: [previousCheck()],
+      previousProducts: [product({ normalPrice: 420000 })],
+    });
     const summary = await checkPrices(deps, { source: "manual", trackedUrlId: 1 });
     expect(summary).toEqual({ checked: 1, failed: 0, alerts: 0 });
     expect(repo.checks.at(-1)?.source).toBe("manual");
@@ -175,26 +190,62 @@ describe("checkPrices: comparación y alertas", () => {
   });
 
   it("un refresh manual que ya vio la baja hace que el cron siguiente no envíe email", async () => {
-    const { deps, sendAlert } = setup({ checks: [previousCheck({ normalPrice: 420000 })] });
+    const { deps, sendAlert } = setup({
+      checks: [previousCheck()],
+      previousProducts: [product({ normalPrice: 420000 })],
+    });
     await checkPrices(deps, { source: "manual", trackedUrlId: 1 });
     await checkPrices(deps, { source: "cron" });
     expect(sendAlert).not.toHaveBeenCalled();
   });
 
-  it("si cambia el producto más barato y el precio baja, cuenta como baja", async () => {
+  it("avisa aunque cambie un producto que no es el más barato, y lista todos", async () => {
+    const wd = { productId: 2, name: "WD Black 2 TB", slug: "wd-black", offerPrice: 440000 };
     const { deps, sendAlert } = setup({
-      checks: [previousCheck({ normalPrice: 420000 })],
-      entries: [entry({ productId: 999, name: "Kingston NV3 2 TB", slug: "kingston-nv3", normalPrice: 300000 })],
+      checks: [previousCheck()],
+      entries: [entry(), entry({ ...wd, normalPrice: 450000 })],
+      previousProducts: [product(), product({ ...wd, normalPrice: 460000, position: 1 })],
     });
     await checkPrices(deps, { source: "cron" });
-    expect(sendAlert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        productName: "Kingston NV3 2 TB",
-        productUrl: "https://www.solotodo.cl/products/999-kingston-nv3",
-        previousPrice: 420000,
-        newPrice: 300000,
-      }),
-    );
+    expect(sendAlert).toHaveBeenCalledWith({
+      label: "SSD 2TB",
+      listingUrl: LISTING_URL,
+      products: [
+        { ...product(), previousNormalPrice: 400889, kind: "same" },
+        { ...product({ ...wd, normalPrice: 450000, position: 1 }), previousNormalPrice: 460000, kind: "down" },
+      ],
+    });
+  });
+
+  it("un producto nuevo más barato no dispara email", async () => {
+    const { deps, repo, sendAlert } = setup({
+      checks: [previousCheck()],
+      entries: [entry({ productId: 999, name: "Kingston NV3 2 TB", slug: "kingston-nv3", normalPrice: 300000 }), entry()],
+      previousProducts: [product()],
+    });
+    await checkPrices(deps, { source: "cron" });
+    expect(repo.checks.at(-1)).toMatchObject({ productId: 999, normalPrice: 300000 });
+    expect(sendAlert).not.toHaveBeenCalled();
+  });
+
+  it("un producto que desaparece no dispara email", async () => {
+    const { deps, sendAlert } = setup({
+      checks: [previousCheck()],
+      entries: [entry()],
+      previousProducts: [product(), product({ productId: 2, normalPrice: 500000, position: 1 })],
+    });
+    await checkPrices(deps, { source: "cron" });
+    expect(sendAlert).not.toHaveBeenCalled();
+  });
+
+  it("si hay cambios, la lista no incluye los productos desaparecidos", async () => {
+    const { deps, sendAlert } = setup({
+      checks: [previousCheck()],
+      entries: [entry()],
+      previousProducts: [product({ normalPrice: 420000 }), product({ productId: 2, normalPrice: 500000, position: 1 })],
+    });
+    await checkPrices(deps, { source: "cron" });
+    expect(sendAlert.mock.calls[0][0].products.map((p: CheckProduct) => p.productId)).toEqual([127681]);
   });
 
   it("elige el menor normal_price aunque la página venga desordenada", async () => {
@@ -232,13 +283,14 @@ describe("checkPrices: tienda informativa", () => {
 
   it("si falla la consulta de ofertas: tienda null, se loguea, y la alerta se envía igual", async () => {
     const { deps, repo, solotodo, sendAlert, logError } = setup({
-      checks: [previousCheck({ normalPrice: 420000 })],
+      checks: [previousCheck()],
+      previousProducts: [product({ normalPrice: 420000 })],
     });
     solotodo.getAvailableOffers.mockRejectedValueOnce(new Error("timeout"));
     const summary = await checkPrices(deps, { source: "cron" });
     expect(summary).toEqual({ checked: 1, failed: 0, alerts: 1 });
     expect(repo.checks.at(-1)).toMatchObject({ storeName: null, storeUrl: null });
-    expect(sendAlert).toHaveBeenCalledWith(expect.objectContaining({ storeName: null, storeUrl: null }));
+    expect(sendAlert).toHaveBeenCalledTimes(1);
     expect(logError).toHaveBeenCalled();
   });
 
@@ -277,7 +329,8 @@ describe("checkPrices: errores y selección de URLs", () => {
 
   it("si el email falla: el registro queda, se loguea y no lanza", async () => {
     const { deps, repo, sendAlert, logError } = setup({
-      checks: [previousCheck({ normalPrice: 420000 })],
+      checks: [previousCheck()],
+      previousProducts: [product({ normalPrice: 420000 })],
     });
     sendAlert.mockRejectedValueOnce(new Error("resend down"));
     const summary = await checkPrices(deps, { source: "cron" });
