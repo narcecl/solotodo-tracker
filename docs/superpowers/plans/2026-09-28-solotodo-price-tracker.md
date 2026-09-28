@@ -4,16 +4,16 @@
 
 **Goal:** Una app personal Next.js 16 que sigue listados filtrados de SoloTodo, guarda a diario el precio del producto más barato (por `normal_price`) y envía un email cuando baja en un chequeo del cron.
 
-**Architecture:** La lógica de dominio vive en `lib/` como funciones puras o con dependencias inyectadas (cliente de la API de SoloTodo, resolución de URLs, `checkPrices`, email), testeadas con Vitest sin red ni base de datos. Drizzle + Neon implementa un repositorio con interfaz `PriceRepo`. Dos entry points comparten `checkPrices`: la ruta `/api/check-prices` (Vercel Cron vía GET + `CRON_SECRET`, refresh manual vía POST) y `scripts/check-prices.ts` (cron local con `launchd`). El dashboard es una página server-rendered con componentes cliente mínimos para las acciones.
+**Architecture:** La lógica de dominio vive en `lib/` como funciones puras o con dependencias inyectadas (cliente de la API de SoloTodo, resolución de URLs, `checkPrices`, email), testeadas con Vitest sin red ni base de datos. Drizzle + postgres.js implementa un repositorio con interfaz `PriceRepo`, contra Postgres local (Homebrew) en desarrollo y Supabase en el deploy. Dos entry points comparten `checkPrices`: la ruta `/api/check-prices` (Vercel Cron vía GET + `CRON_SECRET`, refresh manual vía POST) y `scripts/check-prices.ts` (cron local con `launchd`). El dashboard es una página server-rendered con componentes cliente mínimos para las acciones.
 
-**Tech Stack:** Next.js 16.3 (App Router, `/app`, TypeScript, Tailwind 4), Drizzle ORM 0.45 + drizzle-kit 0.31, `@neondatabase/serverless` 1.x, Resend 6.x, Zod 4, Vitest 5, tsx 4, Node 24.
+**Tech Stack:** Next.js 16.3 (App Router, `/app`, TypeScript, Tailwind 4), Drizzle ORM 0.45 + drizzle-kit 0.31, `postgres` (postgres.js) 3.x, Postgres 17 (Homebrew) local / Supabase en deploy, Resend 6.x, Zod 4, Vitest 5, tsx 4, Node 24.
 
 **Spec:** `docs/superpowers/specs/2026-09-28-solotodo-price-tracker-design.md`
 
 ## Global Constraints
 
 - Next.js 16 con App Router en la carpeta `/app` (sin `src/`). Antes de escribir código de Next (páginas, route handlers, config), leer la guía relevante en `node_modules/next/dist/docs/` (lo exige el `AGENTS.md` generado por `create-next-app`).
-- Postgres gestionado en Neon desde el día uno; acceso con Drizzle ORM. No usar SQLite.
+- Postgres local (Homebrew `postgresql@17`, base `solotodo_tracker`) durante el desarrollo; Supabase al desplegar a Vercel. Acceso con Drizzle ORM y el driver `postgres` (postgres.js) con `prepare: false`. El código no distingue entre ambos: solo cambia `DATABASE_URL`. No usar SQLite ni drivers específicos de un proveedor.
 - Emails con Resend. Tests con Vitest.
 - Variables de entorno: `DATABASE_URL`, `RESEND_API_KEY`, `ALERT_EMAIL`, `CRON_SECRET` (más `ALERT_FROM` opcional, con default `SoloTodo Tracker <onboarding@resend.dev>`). Localmente viven en `.env.local` (no se commitea).
 - API de SoloTodo: `https://api.solotodo.com`, sin autenticación. Listados: `GET /categories/{category_id}/browse/`. Ofertas por tienda: `GET /products/{id}/entities/`. Tiendas: `GET /stores/`. Moneda CLP = `currency_id` 1.
@@ -61,7 +61,7 @@ solotodo-tracker/
 │   ├── deps.ts                            # Cableado de dependencias reales
 │   └── db/
 │       ├── schema.ts                      # Tablas Drizzle
-│       ├── index.ts                       # getDb() perezoso
+│       ├── index.ts                       # getDb() perezoso + closeDb()
 │       └── repo.ts                        # priceRepo + funciones del dashboard
 ├── scripts/
 │   ├── check-prices.ts                    # Entry point del cron local
@@ -108,7 +108,7 @@ Expected: termina con `Success! Created solotodo-tracker`, y existen `app/page.t
 `@types/node` se sube a ^24 en el mismo comando porque Vitest 5 exige `@types/node` ^22 o >=24 como peer (el scaffold trae ^20).
 
 ```bash
-npm install drizzle-orm@^0.45 @neondatabase/serverless@^1 resend@^6 zod@^4
+npm install drizzle-orm@^0.45 postgres@^3 resend@^6 zod@^4
 npm install -D vitest@^5 tsx@^4 drizzle-kit@^0.31 @types/node@^24
 ```
 
@@ -166,8 +166,9 @@ El `.gitignore` generado ignora `.env*`, lo que también ignoraría `.env.exampl
 Create `.env.example`:
 
 ```
-# Postgres de Neon (connection string "pooled" del dashboard de Neon)
-DATABASE_URL=postgresql://user:password@host.neon.tech/neondb?sslmode=require
+# Postgres. Local (Homebrew): reemplazar "usuario" por la salida de `whoami`
+# En Vercel: connection string del transaction pooler de Supabase (puerto 6543)
+DATABASE_URL=postgresql://usuario@localhost:5432/solotodo_tracker
 # API key de Resend
 RESEND_API_KEY=re_xxxxxxxxxxxx
 # Destinatario de las alertas. Con el remitente onboarding@resend.dev, debe ser el email de la cuenta de Resend.
@@ -1725,7 +1726,7 @@ git commit -m "feat: add price drop alert email via Resend"
 
 ---
 
-### Task 6: Base de datos (Drizzle + Neon)
+### Task 6: Base de datos (Drizzle + Postgres local)
 
 **Files:**
 - Create: `lib/db/schema.ts`, `lib/db/index.ts`, `lib/db/repo.ts`, `drizzle.config.ts`
@@ -1735,6 +1736,7 @@ git commit -m "feat: add price drop alert email via Resend"
 - Consumes: tipos de `lib/types.ts`, `PriceRepo` de `lib/check-prices.ts`.
 - Produces:
   - `getDb()`: cliente Drizzle perezoso (lee `DATABASE_URL` en la primera llamada, no al importar)
+  - `closeDb(): Promise<void>`: cierra las conexiones de postgres.js (lo usa el script del cron para que el proceso termine)
   - `priceRepo: PriceRepo`
   - `listTrackedUrls(): Promise<TrackedUrl[]>` (orden por `id`)
   - `listAllChecks(): Promise<PriceCheck[]>` (orden por `checkedAt`, `id` ascendente)
@@ -1744,9 +1746,19 @@ git commit -m "feat: add price drop alert email via Resend"
 
 Este módulo es una capa delgada sobre Drizzle y no tiene unit tests (la spec limita los tests a la lógica). Se valida con la migración real acá y con el flujo completo en las Tasks 7 y 9.
 
-- [ ] **Step 1: Obtener `DATABASE_URL`**
+- [ ] **Step 1: Levantar Postgres local y obtener `DATABASE_URL`**
 
-Pedirle al usuario la connection string de su proyecto Neon: dashboard de Neon → Connect → connection string "pooled". Si no tiene proyecto, que cree uno gratis en neon.tech. Crear `.env.local` (no se commitea) copiando `.env.example` y completando `DATABASE_URL`. Las demás variables pueden quedar vacías por ahora.
+El usuario ya tiene `postgresql@17` instalado con Homebrew. Asegurar que el servicio corre y crear la base:
+
+```bash
+brew services start postgresql@17
+/opt/homebrew/opt/postgresql@17/bin/createdb solotodo_tracker
+/opt/homebrew/opt/postgresql@17/bin/psql -d solotodo_tracker -c "select version();"
+```
+
+Expected: `psql` imprime `PostgreSQL 17.x`. Si `createdb` dice que la base ya existe, continuar.
+
+Crear `.env.local` (no se commitea) copiando `.env.example` y dejando `DATABASE_URL=postgresql://<usuario>@localhost:5432/solotodo_tracker`, con `<usuario>` = salida de `whoami` (el rol por defecto de Homebrew es el usuario de macOS, sin password). Las demás variables pueden quedar vacías por ahora.
 
 - [ ] **Step 2: Crear el schema**
 
@@ -1793,19 +1805,28 @@ export const priceChecks = pgTable(
 Create `lib/db/index.ts`:
 
 ```ts
-import { neon } from "@neondatabase/serverless";
-import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import * as schema from "./schema";
 
-let db: NeonHttpDatabase<typeof schema> | null = null;
+let client: postgres.Sql | null = null;
+let db: PostgresJsDatabase<typeof schema> | null = null;
 
-export function getDb(): NeonHttpDatabase<typeof schema> {
+export function getDb(): PostgresJsDatabase<typeof schema> {
   if (!db) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("Falta la variable de entorno DATABASE_URL");
-    db = drizzle({ client: neon(url), schema });
+    // prepare: false → compatible con el transaction pooler de Supabase (puerto 6543)
+    client = postgres(url, { prepare: false });
+    db = drizzle({ client, schema });
   }
   return db;
+}
+
+export async function closeDb(): Promise<void> {
+  await client?.end();
+  client = null;
+  db = null;
 }
 ```
 
@@ -1909,10 +1930,10 @@ export default defineConfig({
 Run: `npm run db:generate`
 Expected: crea `drizzle/0000_<nombre>.sql` con `CREATE TABLE "tracked_urls"`, `CREATE TABLE "price_checks"`, la FK con `ON DELETE cascade` y el índice `price_checks_tracked_url_checked_at_idx`. Leer el SQL y confirmar que las columnas coinciden con la tabla del spec.
 
-- [ ] **Step 7: Aplicar la migración a Neon**
+- [ ] **Step 7: Aplicar la migración al Postgres local**
 
 Run: `npm run db:migrate`
-Expected: termina sin error. Confirmar en el SQL Editor de Neon, o pidiéndoselo al usuario, que existen las tablas `tracked_urls` y `price_checks`.
+Expected: termina sin error. Confirmar con `/opt/homebrew/opt/postgresql@17/bin/psql -d solotodo_tracker -c '\dt'` que existen las tablas `tracked_urls` y `price_checks`.
 
 - [ ] **Step 8: Typecheck y tests**
 
@@ -1924,7 +1945,7 @@ Expected: sin errores; todos los tests previos siguen pasando.
 ```bash
 git add lib/db drizzle drizzle.config.ts
 git status   # confirmar que .env.local NO está staged
-git commit -m "feat: add Drizzle schema, Neon client and repository"
+git commit -m "feat: add Drizzle schema, Postgres client and repository"
 ```
 
 ---
@@ -1936,7 +1957,7 @@ git commit -m "feat: add Drizzle schema, Neon client and repository"
 - Test: `tests/api-check-prices.test.ts`, `tests/api-tracked-urls.test.ts`
 
 **Interfaces:**
-- Consumes: `checkPrices`, `CheckDeps` (Task 4); `createSolotodoClient` (Task 2); `resolveUrl`, `fetchPageHtml`, `InvalidUrlError` (Task 3); `createAlertSender`, `DEFAULT_ALERT_FROM` (Task 5); `priceRepo`, `createTrackedUrl`, `setTrackedUrlActive`, `deleteTrackedUrl` (Task 6).
+- Consumes: `checkPrices`, `CheckDeps` (Task 4); `createSolotodoClient` (Task 2); `resolveUrl`, `fetchPageHtml`, `InvalidUrlError` (Task 3); `createAlertSender`, `DEFAULT_ALERT_FROM` (Task 5); `priceRepo`, `createTrackedUrl`, `setTrackedUrlActive`, `deleteTrackedUrl`, `closeDb` (Task 6).
 - Produces:
   - `createCheckDeps(): CheckDeps`. Resend se instancia recién al enviar, así el refresh manual funciona aunque falte `RESEND_API_KEY`.
   - `GET /api/check-prices`: requiere `Authorization: Bearer ${CRON_SECRET}`. 401 si falta, no coincide o `CRON_SECRET` no está definido. 200 con `CheckSummary`.
@@ -2278,13 +2299,19 @@ Create `scripts/check-prices.ts`:
 
 ```ts
 import { checkPrices } from "../lib/check-prices";
+import { closeDb } from "../lib/db";
 import { createCheckDeps } from "../lib/deps";
 
 async function main() {
   process.loadEnvFile(".env.local");
-  const summary = await checkPrices(createCheckDeps(), { source: "cron" });
-  console.log(`[${new Date().toISOString()}] check-prices ${JSON.stringify(summary)}`);
-  if (summary.failed > 0) process.exitCode = 1;
+  try {
+    const summary = await checkPrices(createCheckDeps(), { source: "cron" });
+    console.log(`[${new Date().toISOString()}] check-prices ${JSON.stringify(summary)}`);
+    if (summary.failed > 0) process.exitCode = 1;
+  } finally {
+    // postgres.js mantiene conexiones abiertas; sin cerrarlas el proceso no termina
+    await closeDb();
+  }
 }
 
 main().catch((error) => {
@@ -2308,7 +2335,7 @@ Expected: respuesta 201 con `"status":"ok"`, `"categoryId":39` y `params` que in
 ```bash
 npm run check-prices
 ```
-Expected: línea `check-prices {"checked":1,"failed":0,"alerts":0}`. En el primer chequeo nunca hay email.
+Expected: línea `check-prices {"checked":1,"failed":0,"alerts":0}` y el proceso termina solo (si queda colgado, falta cerrar la conexión con `closeDb`). En el primer chequeo nunca hay email.
 
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" localhost:3000/api/check-prices
@@ -2980,7 +3007,7 @@ Diseño: `docs/superpowers/specs/2026-09-28-solotodo-price-tracker-design.md`
 
 1. `npm install`
 2. `cp .env.example .env.local` y completar:
-   - `DATABASE_URL`: connection string "pooled" de Neon.
+   - `DATABASE_URL`: Postgres local, `postgresql://<usuario>@localhost:5432/solotodo_tracker` con `<usuario>` = `whoami` (requiere `brew services start postgresql@17` y `createdb solotodo_tracker`).
    - `RESEND_API_KEY`: API key de Resend.
    - `ALERT_EMAIL`: destinatario. Con el remitente por defecto (`onboarding@resend.dev`), Resend solo entrega al email de tu cuenta de Resend.
    - `CRON_SECRET`: `openssl rand -hex 32`.
@@ -3007,13 +3034,17 @@ Diseño: `docs/superpowers/specs/2026-09-28-solotodo-price-tracker-design.md`
 
 ## URLs en revisión
 
-Si al agregar una URL no se puede resolver su categoría o el listado de prueba no trae resultados, queda con `status = 'needs_review'` y no se chequea. Para corregirla, editar `category_id` y `params` en la tabla `tracked_urls` (por ejemplo, desde el SQL Editor de Neon) y dejar `status = 'ok'`. `params` es un JSON `{ "clave": ["valor", ...] }` con los mismos filtros de la URL del sitio.
+Si al agregar una URL no se puede resolver su categoría o el listado de prueba no trae resultados, queda con `status = 'needs_review'` y no se chequea. Para corregirla, editar `category_id` y `params` en la tabla `tracked_urls` (por ejemplo, con `psql -d solotodo_tracker` en local, o desde el SQL Editor de Supabase una vez desplegado) y dejar `status = 'ok'`. `params` es un JSON `{ "clave": ["valor", ...] }` con los mismos filtros de la URL del sitio.
 
 ## Deploy a Vercel (futuro)
 
-1. Importar el repo en Vercel y copiar las variables de entorno de `.env.local`.
-2. **Activar Deployment Protection** antes de exponer la app: el dashboard y `/api/tracked-urls` no tienen autenticación propia.
-3. `vercel.json` ya declara el cron diario sobre `/api/check-prices`, que Vercel llama por GET con `Authorization: Bearer $CRON_SECRET`. Desinstalar el LaunchAgent local para no duplicar los chequeos.
+1. Crear un proyecto en [Supabase](https://supabase.com) y aplicar las migraciones contra él usando la connection string directa o del session pooler (puerto 5432):
+   `DATABASE_URL='postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres' npm run db:migrate`
+   (`process.loadEnvFile` no pisa variables ya definidas, así que esta URL tiene prioridad sobre `.env.local`).
+2. Importar el repo en Vercel y copiar las variables de entorno de `.env.local`, pero con `DATABASE_URL` = connection string del **transaction pooler** de Supabase (puerto 6543). El cliente ya usa `prepare: false`, que ese modo requiere.
+3. (Opcional) Copiar los datos locales: `pg_dump --data-only solotodo_tracker | psql '<url de Supabase, puerto 5432>'`.
+4. **Activar Deployment Protection** antes de exponer la app: el dashboard y `/api/tracked-urls` no tienen autenticación propia.
+5. `vercel.json` ya declara el cron diario sobre `/api/check-prices`, que Vercel llama por GET con `Authorization: Bearer $CRON_SECRET`. Desinstalar el LaunchAgent local para no duplicar los chequeos.
 ````
 
 - [ ] **Step 5: Verificación end-to-end del email (con el usuario)**
@@ -3021,7 +3052,7 @@ Si al agregar una URL no se puede resolver su categoría o el listado de prueba 
 Pedirle al usuario `RESEND_API_KEY` y confirmar `ALERT_EMAIL` en `.env.local`. Después:
 
 1. `npm run check-prices` para tener un registro base (no envía email si no hay una baja).
-2. Pedirle al usuario que ejecute en el SQL Editor de Neon, para simular que el precio anterior era más alto:
+2. Ejecutar en el Postgres local (`/opt/homebrew/opt/postgresql@17/bin/psql -d solotodo_tracker`), para simular que el precio anterior era más alto:
    ```sql
    UPDATE price_checks SET normal_price = normal_price + 10000
    WHERE id = (SELECT max(id) FROM price_checks);

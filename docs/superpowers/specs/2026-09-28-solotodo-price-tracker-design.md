@@ -33,7 +33,10 @@ Uso personal, un solo usuario, sin autenticación de usuarios.
 ## Stack técnico
 
 - **Next.js 16** (App Router, carpeta `/app`, TypeScript).
-- **Postgres gestionado (Neon)** desde el día uno: el mismo `DATABASE_URL` funciona local y en Vercel, sin migración futura.
+- **Postgres** en dos etapas, con el mismo schema y las mismas migraciones Drizzle:
+  - **Local:** Postgres 17 instalado con Homebrew (`postgresql@17`), base `solotodo_tracker`.
+  - **Deploy (Vercel):** **Supabase** (Postgres gestionado). Pasar de uno a otro es cambiar `DATABASE_URL` y aplicar las migraciones; no hay cambios de código.
+  - Driver `postgres` (postgres.js), que funciona igual contra el Postgres local y contra Supabase. Con `prepare: false` para ser compatible con el pooler de Supabase en modo transacción.
 - **Drizzle ORM**.
 - **Resend** para emails.
 - **Vitest** para tests.
@@ -166,7 +169,8 @@ Página única.
 
 ## Seguridad y deploy
 
-- Local: el dashboard y la API solo escuchan en localhost; no hace falta protección adicional.
+- Local: el dashboard y la API solo escuchan en localhost; no hace falta protección adicional. La base es el Postgres local de Homebrew.
+- **Paso a Supabase:** crear el proyecto, aplicar las migraciones Drizzle contra él (conexión directa o session pooler, puerto 5432) y configurar en Vercel `DATABASE_URL` con la connection string del **transaction pooler** (puerto 6543), adecuada para funciones serverless. Los datos locales no se migran salvo que se quiera (`pg_dump`/`psql` si hace falta).
 - **Antes de desplegar a Vercel** hay que activar Vercel Deployment Protection (o una protección equivalente) sobre el dashboard y `/api/tracked-urls`, porque la app no tiene auth propia. `/api/check-prices` en modo cron queda protegido por `CRON_SECRET`.
 - El cron de Vercel en plan Hobby permite una ejecución diaria, que coincide con la frecuencia definida.
 
