@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@/lib/deps', () => ({ createCheckDeps: vi.fn(() => ({ fake: true })) }));
 vi.mock('@/lib/check-prices', () => ({ checkPrices: vi.fn() }));
 
-import { GET, POST } from '@/app/api/check-prices/route';
+import { GET } from '@/app/api/check-prices/route';
 import { checkPrices } from '@/lib/check-prices';
 
 const mockedCheckPrices = vi.mocked(checkPrices);
@@ -48,24 +48,4 @@ describe('GET /api/check-prices (cron)', () => {
     });
 });
 
-describe('POST /api/check-prices (manual)', () => {
-    const post = (body: unknown) => POST(new Request(URL_, { method: 'POST', body: JSON.stringify(body) }));
 
-    it.each([{}, { trackedUrlId: '1' }, { trackedUrlId: 0 }, { trackedUrlId: 1.5 }])('400 con body inválido %j', async (body) => {
-        const res = await post(body);
-        expect(res.status).toBe(400);
-        expect(mockedCheckPrices).not.toHaveBeenCalled();
-    });
-
-    it('ejecuta con source manual para esa URL', async () => {
-        const res = await post({ trackedUrlId: 7 });
-        expect(res.status).toBe(200);
-        expect(mockedCheckPrices).toHaveBeenCalledWith({ fake: true }, { source: 'manual', trackedUrlId: 7 });
-    });
-
-    it('502 si no se pudo chequear', async () => {
-        mockedCheckPrices.mockResolvedValue({ checked: 0, failed: 1, alerts: 0 });
-        const res = await post({ trackedUrlId: 7 });
-        expect(res.status).toBe(502);
-    });
-});

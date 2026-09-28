@@ -45,5 +45,5 @@ Si al agregar una URL no se puede resolver su categoría o el listado de prueba 
    (`process.loadEnvFile` no pisa variables ya definidas, así que esta URL tiene prioridad sobre `.env.local`).
 2. Importar el repo en Vercel y copiar las variables de entorno de `.env.local`, pero con `DATABASE_URL` = connection string del **transaction pooler** de Supabase (puerto 6543). El cliente ya usa `prepare: false`, que ese modo requiere.
 3. (Opcional) Copiar los datos locales: `pg_dump --data-only solotodo_tracker | psql '<url de Supabase, puerto 5432>'`.
-4. **Activar Deployment Protection** antes de exponer la app: el dashboard y `/api/tracked-urls` no tienen autenticación propia.
+4. **Activar Deployment Protection** antes de exponer la app: el dashboard y sus Server Actions no tienen autenticación propia.
 5. `vercel.json` ya declara el cron diario sobre `/api/check-prices`, que Vercel llama por GET con `Authorization: Bearer $CRON_SECRET`. Desinstalar el LaunchAgent local para no duplicar los chequeos.
