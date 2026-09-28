@@ -1,6 +1,6 @@
-import { checkPrices } from "../lib/check-prices";
-import { closeDb } from "../lib/db";
-import { createCheckDeps } from "../lib/deps";
+import { checkPrices } from "../src/lib/check-prices";
+import { closeDb } from "../src/lib/db";
+import { createCheckDeps } from "../src/lib/deps";
 
 async function main() {
   process.loadEnvFile(".env.local");

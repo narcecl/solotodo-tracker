@@ -1,8 +1,8 @@
 import { connection } from "next/server";
 import { buildDashboardRows } from "@/lib/dashboard";
 import { listAllChecks, listTrackedUrls } from "@/lib/db/repo";
-import { AddUrlForm } from "./components/add-url-form";
-import { TrackedUrlRow } from "./components/tracked-url-row";
+import { AddUrlForm } from "@/components/dashboard/add-url-form";
+import { TrackedUrlRow } from "@/components/dashboard/tracked-url-row";
 
 export default async function Home() {
   await connection();
