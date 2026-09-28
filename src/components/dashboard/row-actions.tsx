@@ -3,6 +3,8 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { EllipsisVertical } from 'lucide-react';
 
 interface Props {
     id: number;
@@ -57,35 +59,23 @@ export function RowActions({ id, active, canRefresh }: Props) {
     return (
         <div className="flex flex-col items-end gap-1">
             <div className="flex gap-2">
-                {canRefresh && (
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={refresh}
-                        disabled={pending}
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="ghost">
+                            <EllipsisVertical className="size-4" />
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                        className="w-40"
+                        align="start"
                     >
-                        {pending ? '…' : 'Refrescar ahora'}
-                    </Button>
-                )}
-                <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={toggle}
-                    disabled={pending}
-                >
-                    {active ? 'Pausar' : 'Reactivar'}
-                </Button>
-                <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={remove}
-                    disabled={pending}
-                >
-                    Eliminar
-                </Button>
+                        <DropdownMenuGroup>
+                            {canRefresh && <DropdownMenuItem onClick={refresh}>Sincronizar</DropdownMenuItem>}
+                            <DropdownMenuItem onClick={toggle}>{active ? 'Pausar' : 'Reactivar'}</DropdownMenuItem>
+                            <DropdownMenuItem onClick={remove}>Eliminar</DropdownMenuItem>
+                        </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </div>
             {error && (
                 <p

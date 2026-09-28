@@ -1,116 +1,141 @@
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { DashboardRow, Trend } from '@/lib/dashboard';
-import { formatCLP, formatDateTime } from '@/lib/format';
+'use client';
+import { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import type { DashboardRow } from '@/lib/dashboard';
+import { formatCLP, formatFriendlyDate } from '@/lib/format';
 import { OtherProducts } from './other-products';
 import { RowActions } from './row-actions';
-import { Sparkline } from './sparkline';
-
-const TREND: Record<Trend, { symbol: string; label: string; className: string }> = {
-    down: { symbol: '↓', label: 'bajó', className: 'text-green-600 dark:text-green-400' },
-    up: { symbol: '↑', label: 'subió', className: 'text-red-600 dark:text-red-400' },
-    same: { symbol: '—', label: 'sin cambio', className: 'text-muted-foreground' },
-};
-
-const linkClass = 'underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-current';
+import { Accordion, AccordionContent, AccordionItem } from '../ui/accordion';
+import { cn } from 'cn';
+import { Badge } from '../ui/badge';
 
 export function TrackedUrlRow({ row }: { row: DashboardRow }) {
-    const { tracked, latest, previous, trend, productUrl, history, products } = row;
+    const { tracked, latest, products } = row;
     const needsReview = tracked.status === 'needs_review';
     const others = products.filter((p) => p.position > 0);
 
+    const [open, setOpen] = useState(false);
+
     return (
         <li>
-            <Card>
-                <CardHeader>
-                    <div className="flex flex-wrap items-center gap-2">
-                        <CardTitle>{tracked.label}</CardTitle>
-                        {!tracked.active && <Badge variant="secondary">Pausada</Badge>}
-                        {needsReview && (
-                            <Badge
-                                variant="outline"
-                                className="border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-300"
-                                title="No se pudo resolver la URL. Corrige category_id y params en la base de datos."
-                            >
-                                ⚠ Revisión pendiente
-                            </Badge>
-                        )}
-                        <a
-                            href={tracked.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className={`text-xs text-muted-foreground ${linkClass}`}
-                        >
-                            ver listado
-                        </a>
+            <Card className="hover:ring-foreground/20 hover:bg-muted/80 transition-all gap-0 p-0!">
+                <CardHeader
+                    className={cn('flex items-center justify-between py-4', { 'cursor-pointer': others.length > 0 })}
+                    onClick={() => setOpen((o) => !o)}
+                >
+                    <div className="flex items-center gap-4">
+                        <div className="size-11 border rounded-md"></div>
+                        <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                                <CardTitle>{tracked.label}</CardTitle>
+                                {!tracked.active && <Badge variant="secondary">Pausada</Badge>}
+                                {needsReview && (
+                                    <Badge
+                                        variant="outline"
+                                        className="border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-300"
+                                        title="No se pudo resolver la URL. Corrige category_id y params en la base de datos."
+                                    >
+                                        ⚠ Revisión pendiente
+                                    </Badge>
+                                )}
+                            </div>
+                            <CardDescription className="text-sm lowercase">
+                                {products.length} productos {latest?.storeName && `· Último chequeo ${formatFriendlyDate(latest.checkedAt)}`}
+                            </CardDescription>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-6">
+                        {latest ? (
+                            <div className="flex flex-col text-right">
+                                <span className="text-lg font-semibold">{formatCLP(latest.offerPrice)}</span>
+                                <span className="text-xs text-muted-foreground">{formatCLP(latest.normalPrice)}</span>
+                            </div>
+                        ) : null}
+                        <div className="flex items-center gap-2">
+                            <RowActions
+                                id={tracked.id}
+                                active={tracked.active}
+                                canRefresh={!needsReview}
+                            />
+                        </div>
                     </div>
                 </CardHeader>
 
-                <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="min-w-0 flex-1 space-y-1">
-                        {latest && productUrl ? (
-                            <>
-                                <a
-                                    href={productUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className={`block truncate text-sm ${linkClass}`}
-                                >
-                                    {latest.productName}
-                                </a>
-                                <p className="flex flex-wrap items-baseline gap-x-2">
-                                    <span className="text-lg font-semibold">{formatCLP(latest.normalPrice)}</span>
-                                    <span className="text-sm text-muted-foreground">{formatCLP(latest.offerPrice)} con medio de pago específico</span>
-                                    {trend && previous && (
-                                        <span className={`text-sm ${TREND[trend].className}`}>
-                                            {TREND[trend].symbol} {TREND[trend].label}
-                                            {trend !== 'same' && ` ${formatCLP(Math.abs(latest.normalPrice - previous.normalPrice))}`}
-                                        </span>
-                                    )}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                    {latest.storeName && (
-                                        <>
-                                            Tienda:{' '}
-                                            {latest.storeUrl ? (
-                                                <a
-                                                    href={latest.storeUrl}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className={linkClass}
-                                                >
-                                                    {latest.storeName}
-                                                </a>
+                <CardContent>
+                    <Accordion
+                        type="single"
+                        value={open ? 'others' : ''}
+                        onValueChange={(value) => setOpen(value === 'others')}
+                        collapsible
+                    >
+                        <AccordionItem
+                            value="others"
+                            className="border-b-0"
+                        >
+                            <AccordionContent className="pb-4">
+                                {/* <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="min-w-0 flex-1 space-y-1">
+                                            {latest && productUrl ? (
+                                                <>
+                                                    <a
+                                                        href={productUrl}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className={`block truncate text-sm ${linkClass}`}
+                                                    >
+                                                        {latest.productName}
+                                                    </a>
+                                                    <p className="flex flex-wrap items-baseline gap-x-2">
+                                                        <span className="text-lg font-semibold">{formatCLP(latest.normalPrice)}</span>
+                                                        <span className="text-sm text-muted-foreground">
+                                                            {formatCLP(latest.offerPrice)} oferta / efectivo
+                                                        </span>
+                                                        {trend && previous && (
+                                                            <span className={`text-sm ${TREND[trend].className}`}>
+                                                                {TREND[trend].symbol} {TREND[trend].label}
+                                                                {trend !== 'same' && ` ${formatCLP(Math.abs(latest.normalPrice - previous.normalPrice))}`}
+                                                            </span>
+                                                        )}
+                                                    </p>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {latest.storeName && (
+                                                            <>
+                                                                Tienda:{' '}
+                                                                {latest.storeUrl ? (
+                                                                    <a
+                                                                        href={latest.storeUrl}
+                                                                        target="_blank"
+                                                                        rel="noreferrer"
+                                                                        className={linkClass}
+                                                                    >
+                                                                        {latest.storeName}
+                                                                    </a>
+                                                                ) : (
+                                                                    latest.storeName
+                                                                )}
+                                                            </>
+                                                        )}
+                                                    </p>
+                                                </>
                                             ) : (
-                                                latest.storeName
+                                                <p className="text-sm text-muted-foreground">
+                                                    {needsReview
+                                                        ? 'Sin chequeos: la URL necesita revisión.'
+                                                        : 'Sin chequeos todavía. Usa "Refrescar ahora".'}
+                                                </p>
                                             )}
-                                            {' · '}
-                                        </>
-                                    )}
-                                    Último chequeo: {formatDateTime(latest.checkedAt)}
-                                </p>
-                            </>
-                        ) : (
-                            <p className="text-sm text-muted-foreground">
-                                {needsReview ? 'Sin chequeos: la URL necesita revisión.' : 'Sin chequeos todavía. Usa "Refrescar ahora".'}
-                            </p>
-                        )}
-                    </div>
+                                        </div>
 
-                    <div className="flex items-center gap-4">
-                        <Sparkline values={history} />
-                        <RowActions
-                            id={tracked.id}
-                            active={tracked.active}
-                            canRefresh={!needsReview}
-                        />
-                    </div>
+                                        <div className="flex items-center gap-4">
+                                            <Sparkline values={history} />
+                                        </div>
+                                    </div> */}
+                                {others.length > 0 && <OtherProducts products={products} />}
+                            </AccordionContent>
+                        </AccordionItem>
+                    </Accordion>
                 </CardContent>
-                {others.length > 0 && (
-                    <CardContent>
-                        <OtherProducts products={others} />
-                    </CardContent>
-                )}
             </Card>
         </li>
     );
