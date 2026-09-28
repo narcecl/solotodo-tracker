@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { DashboardRow, Trend } from "@/lib/dashboard";
 import { formatCLP, formatDateTime } from "@/lib/format";
+import { OtherProducts } from "./other-products";
 import { RowActions } from "./row-actions";
 import { Sparkline } from "./sparkline";
 
@@ -14,8 +15,9 @@ const TREND: Record<Trend, { symbol: string; label: string; className: string }>
 const linkClass = "underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-current";
 
 export function TrackedUrlRow({ row }: { row: DashboardRow }) {
-  const { tracked, latest, previous, trend, productUrl, history } = row;
+  const { tracked, latest, previous, trend, productUrl, history, products } = row;
   const needsReview = tracked.status === "needs_review";
+  const others = products.filter((p) => p.position > 0);
 
   return (
     <li>
@@ -90,6 +92,11 @@ export function TrackedUrlRow({ row }: { row: DashboardRow }) {
             <RowActions id={tracked.id} active={tracked.active} canRefresh={!needsReview} />
           </div>
         </CardContent>
+        {others.length > 0 && (
+          <CardContent>
+            <OtherProducts products={others} />
+          </CardContent>
+        )}
       </Card>
     </li>
   );
