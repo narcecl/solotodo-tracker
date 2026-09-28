@@ -2,17 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type Message = { kind: "ok" | "warn" | "error"; text: string };
 
 const MESSAGE_CLASS: Record<Message["kind"], string> = {
-  ok: "text-green-700",
-  warn: "text-amber-700",
-  error: "text-red-600",
+  ok: "text-green-700 dark:text-green-400",
+  warn: "text-amber-700 dark:text-amber-400",
+  error: "text-destructive",
 };
-
-const inputClass =
-  "w-full rounded-md border border-zinc-300 bg-transparent px-3 py-2 text-sm dark:border-zinc-700";
 
 export function AddUrlForm() {
   const router = useRouter();
@@ -52,25 +51,21 @@ export function AddUrlForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-6 space-y-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+    <form onSubmit={onSubmit} className="mt-6 space-y-3 rounded-lg border p-4">
       <div className="grid gap-3 sm:grid-cols-[1fr_14rem]">
         <label className="space-y-1 text-sm">
           <span>URL del listado en SoloTodo</span>
-          <input name="url" type="url" required placeholder="https://www.solotodo.cl/ssd-m2-pcie-nvme?..." className={inputClass} />
+          <Input name="url" type="url" required placeholder="https://www.solotodo.cl/ssd-m2-pcie-nvme?..." />
         </label>
         <label className="space-y-1 text-sm">
           <span>Nombre</span>
-          <input name="label" type="text" required maxLength={100} placeholder="SSD 2TB NVMe" className={inputClass} />
+          <Input name="label" type="text" required maxLength={100} placeholder="SSD 2TB NVMe" />
         </label>
       </div>
       <div className="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900"
-        >
+        <Button type="submit" disabled={pending}>
           {pending ? "Agregando…" : "Agregar"}
-        </button>
+        </Button>
         {message && (
           <p role="status" className={`text-sm ${MESSAGE_CLASS[message.kind]}`}>
             {message.text}

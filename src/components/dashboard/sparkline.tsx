@@ -12,7 +12,7 @@ export function Sparkline({ values }: { values: number[] }) {
       height={HEIGHT}
       role="img"
       aria-label={`Histórico de precio normal (${values.length} chequeos)`}
-      className="text-zinc-400"
+      className="text-muted-foreground"
     >
       <polyline
         points={sparklinePoints(values, WIDTH, HEIGHT, 2)}

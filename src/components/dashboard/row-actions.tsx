@@ -2,15 +2,13 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { Button } from "@/components/ui/button";
 
 interface Props {
   id: number;
   active: boolean;
   canRefresh: boolean;
 }
-
-const buttonClass =
-  "rounded-md border border-zinc-300 px-2.5 py-1 text-sm hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800";
 
 export function RowActions({ id, active, canRefresh }: Props) {
   const router = useRouter();
@@ -60,19 +58,19 @@ export function RowActions({ id, active, canRefresh }: Props) {
     <div className="flex flex-col items-end gap-1">
       <div className="flex gap-2">
         {canRefresh && (
-          <button type="button" className={buttonClass} onClick={refresh} disabled={pending}>
+          <Button type="button" variant="outline" size="sm" onClick={refresh} disabled={pending}>
             {pending ? "…" : "Refrescar ahora"}
-          </button>
+          </Button>
         )}
-        <button type="button" className={buttonClass} onClick={toggle} disabled={pending}>
+        <Button type="button" variant="outline" size="sm" onClick={toggle} disabled={pending}>
           {active ? "Pausar" : "Reactivar"}
-        </button>
-        <button type="button" className={buttonClass} onClick={remove} disabled={pending}>
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={remove} disabled={pending}>
           Eliminar
-        </button>
+        </Button>
       </div>
       {error && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       )}
