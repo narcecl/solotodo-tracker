@@ -92,6 +92,13 @@ export async function createTrackedUrl(input: {
     return row;
 }
 
+export type TrackedUrlUpdate = Partial<Pick<TrackedUrl, 'label' | 'url' | 'categoryId' | 'params' | 'status'>>;
+
+export async function updateTrackedUrl(id: number, data: TrackedUrlUpdate): Promise<TrackedUrl | null> {
+    const [row] = await getDb().update(trackedUrls).set(data).where(eq(trackedUrls.id, id)).returning();
+    return row ?? null;
+}
+
 export async function setTrackedUrlActive(id: number, active: boolean): Promise<TrackedUrl | null> {
     const [row] = await getDb().update(trackedUrls).set({ active }).where(eq(trackedUrls.id, id)).returning();
     return row ?? null;
