@@ -1,55 +1,31 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
 import { SubmitEvent, useState, useTransition } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Plus } from 'lucide-react';
-
-type Message = { kind: 'ok' | 'warn' | 'error'; text: string };
-
-const MESSAGE_CLASS: Record<Message['kind'], string> = {
-    ok: 'text-green-700 dark:text-green-400',
-    warn: 'text-amber-700 dark:text-amber-400',
-    error: 'text-destructive',
-};
+import { createTrackedUrlAction } from '@/app/actions/tracked-urls';
+import type { FormState } from '@/app/actions/types';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { CONNECTION_ERROR, FormMessage, IDLE_STATE } from './form-message';
 
 export function AddUrlForm() {
-    const router = useRouter();
     const [open, setOpen] = useState(false);
     const [pending, startTransition] = useTransition();
-    const [message, setMessage] = useState<Message | null>(null);
+    const [state, setState] = useState<FormState>(IDLE_STATE);
+    const invalid = (field: string) => state.kind === 'error' && state.field === field;
 
     function onSubmit(event: SubmitEvent<HTMLFormElement>) {
         event.preventDefault();
         const form = event.currentTarget;
         const data = new FormData(form);
-        setMessage(null);
+        setState(IDLE_STATE);
 
         startTransition(async () => {
-            const response = await fetch('/api/tracked-urls', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: data.get('url'), label: data.get('label') }),
-            }).catch(() => null);
-
-            if (!response) {
-                setMessage({ kind: 'error', text: 'No se pudo conectar con el servidor.' });
-                return;
-            }
-            const body = (await response.json().catch(() => ({}))) as { error?: string; status?: string };
-            if (!response.ok) {
-                setMessage({ kind: 'error', text: body.error ?? 'No se pudo agregar la URL.' });
-                return;
-            }
-            form.reset();
-            setMessage(
-                body.status === 'ok'
-                    ? { kind: 'ok', text: 'URL agregada. Usa "Refrescar ahora" para ver su precio.' }
-                    : { kind: 'warn', text: 'URL guardada, pero no se pudo resolver: quedó en revisión.' },
-            );
-            router.refresh();
+            const result = await createTrackedUrlAction(data).catch(() => CONNECTION_ERROR);
+            // Solo se limpia si se guardó: con error el usuario conserva lo que escribió
+            if (result.kind !== 'error') form.reset();
+            setState(result);
         });
     }
 
@@ -77,6 +53,7 @@ export function AddUrlForm() {
                                     name="url"
                                     type="url"
                                     required
+                                    aria-invalid={invalid('url')}
                                     placeholder="https://www.solotodo.cl/ssd-m2-pcie-nvme?..."
                                 />
                             </label>
@@ -87,6 +64,7 @@ export function AddUrlForm() {
                                     type="text"
                                     required
                                     maxLength={100}
+                                    aria-invalid={invalid('label')}
                                     placeholder="SSD 2TB NVMe"
                                 />
                             </label>
@@ -97,14 +75,7 @@ export function AddUrlForm() {
                                 >
                                     {pending ? 'Agregando…' : 'Agregar'}
                                 </Button>
-                                {message && (
-                                    <p
-                                        role="status"
-                                        className={`text-sm ${MESSAGE_CLASS[message.kind]}`}
-                                    >
-                                        {message.text}
-                                    </p>
-                                )}
+                                <FormMessage state={state} />
                             </div>
                         </div>
                     </form>
